@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(apt-cache show:*)",
+      "Bash(apt-cache search:*)",
+      "Bash(head -10 grep -rn \"AOT_MAGIC_NUMBER\\\\|AOT_CURRENT_VERSION\\\\|aot_compatible_version\" /home/xin/fuse/wasm-micro-runtime/core/iwasm/aot/*.h)",
+      "Bash(head -10 grep -rn \"#define AOT_MAGIC_NUMBER\\\\|#define AOT_CURRENT_VERSION\" /home/xin/fuse/wasm-micro-runtime/)",
+      "Bash(cmake -S . -B build -DCMAKE_BUILD_TYPE=Release)",
+      "Bash(cmake --build /home/xin/fuse/build --config Release)",
+      "Bash(cmake --build /home/xin/fuse/build --config Release -- VERBOSE=1)",
+      "Bash(./build.py -c)",
+      "Bash(./tests/fuse_test)",
+      "Bash(./tests/fuse_test --gtest_filter=\"HalBridgeTest.TempCallbackInvokedExactlyOnce\")",
+      "Bash(./build.py)",
+      "Bash(./build.py -c -b Debug 2>&1)",
+      "Bash(ctest --output-on-failure)"
+    ]
+  }
+}
