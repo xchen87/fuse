@@ -34,7 +34,11 @@ enable_testing()
 
 file(GLOB SRCS "${CMAKE_CURRENT_SOURCE_DIR}/core/*.c")
 add_library(fuse SHARED ${SRCS})
-target_include_directories(fuse PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(fuse
+    PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/core
+            ${WAMR_ROOT_DIR}/core/iwasm/include
+)
 target_link_libraries(fuse PUBLIC vmlib -lm)
 target_compile_options(fuse PRIVATE
     $<$<CONFIG:Debug>:-g -O0>
