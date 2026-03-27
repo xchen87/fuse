@@ -30,3 +30,19 @@ erDiagram
 - No Dynamic Allocation: *module_api_spec* shall not trigger malloc/free. All data transfers must use pre-allocated buffers.
 - Capacity Bitmask: every *Module* is assigned a bitmask in *Policy* at loading time. *FUSE* checks this mask before executing module_api functions for hardware accesses.
 - Security Logging: any out-of bound access of an unauthorized module_api calls, *FUSE* shall immediately trap the module instance and log a security violation to the security log.
+
+## CPU Quota Design
+WAMR's `wasm_runtime_set_instruction_count_limit()` only works in **interpreter mode**, not AOT. FUSE uses **time-based quota** instead:
+
+- `fuse_policy_t.cpu_quota_us` — max microseconds per `module_step()` call (0 = no limit)
+- `fuse_hal_t.quota_arm(module_id, quota_us)` — host arms a one-shot hardware timer before each step
+- `fuse_hal_t.quota_cancel(module_id)` — host cancels the timer on normal step return
+- `fuse_quota_expired(module_id)` — host calls from timer ISR; ISR-safe (only calls `wasm_runtime_terminate()` + atomic fence)
+- On quota expiry: module transitions to `FUSE_MODULE_STATE_QUOTA_EXCEEDED`, FATAL log entry written, `fuse_module_run_step()` returns `FUSE_ERR_QUOTA_EXCEEDED`
+- `wasm_runtime_terminate()` sets an atomic flag in the exec_env; WAMR detects it and raises `"terminated by user"` exception, which unwinds the AOT call stack
+
+## Module Execution Model
+- *Module* must export `module_step()` — FUSE drives execution by calling it once per scheduling quantum via `fuse_module_run_step()`
+- *Module* must NOT contain infinite loops inside `module_step()` — all work must complete within one call
+- Optional exports: `module_init()` called once on first `fuse_module_start()`, `module_deinit()` called on `fuse_module_unload()` (skipped if module is TRAPPED or QUOTA_EXCEEDED)
+- Module state machine: `LOADED → RUNNING ↔ PAUSED`, `RUNNING → TRAPPED` (policy/exception), `RUNNING → QUOTA_EXCEEDED` (timer)

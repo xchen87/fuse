@@ -69,8 +69,34 @@ wamrc -o module.aot module.wasm
 ```
 GoogleTest fetches automatically via CMake's `FetchContent` on first build. The test binary is `build/tests/fuse_test`.
 
-**Note:** `wamrc` is not pre-installed. Build it from `wasm-micro-runtime/wamr-compiler/` first.
+**Note:** `wamrc` is not pre-installed. Build it once from the WAMR submodule (requires building LLVM first, ~45 min):
+```bash
+# Step 1: build LLVM (one-time, ~45 min)
+cd wasm-micro-runtime/wamr-compiler && ./build_llvm.sh --arch X86
+
+# Step 2: build wamrc
+mkdir -p build && cd build && cmake .. && make -j$(nproc)
+# Binary: wasm-micro-runtime/wamr-compiler/build/wamrc
+# CMake find_program already searches this path automatically.
+```
+After wamrc is built, `./build.py -c` will auto-compile all .wat test modules to .aot.
 
 ## Docker Toolchain (paths inside container)
 - **WASI SDK** (compile C→wasm): `/opt/wasi-sdk` — compiler at `/opt/wasi-sdk/bin/clang`, sysroot at `/opt/wasi-sdk/share/wasi-sysroot`
 - **WABT** (wasm inspect/validate): `/opt/wabt/bin/` — includes `wasm2wat`, `wat2wasm`, `wasm-validate`
+- **wamrc** (wasm→AOT): built from `wasm-micro-runtime/wamr-compiler/build/wamrc` (not pre-installed)
+
+## Module Contract
+Every FUSE *Module* **must** export `module_step()` as its primary entry point:
+```c
+__attribute__((export_name("module_step")))
+void module_step(void) { /* one unit of work — no infinite loops */ }
+```
+Optional exports: `module_init()` (called once on first start), `module_deinit()` (called on unload).
+`fuse_module_load()` will fail if `module_step` is not exported.
+
+## Key WAMR/AOT Constraints (Lessons Learned)
+- **No instruction metering in AOT mode.** `wasm_runtime_set_instruction_count_limit()` only works in interpreter mode. CPU quota in FUSE is time-based (host timer → `fuse_quota_expired()`).
+- **WAMR AOT memory includes heap.** A module with `memory_pages_max=1` and `heap_size=8192` has a combined allocation of `65536+8192=73728` bytes. `wasm_runtime_validate_native_addr` validates against this combined size, not just linear memory. OOB tests must use lengths that clearly exceed the combined allocation.
+- **`wasm_runtime_destroy()` must be guarded.** Calling it when WAMR was never initialized (or already destroyed) causes an abort. Always check `g_ctx.initialized` before calling it.
+- **WAMR NativeSymbol `*~` signature** auto-converts module addresses to native pointers but does NOT guarantee bounds checking in AOT mode. Always call `wasm_runtime_validate_native_addr()` explicitly for buffer arguments.
