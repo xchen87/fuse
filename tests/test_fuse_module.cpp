@@ -448,8 +448,8 @@ TEST_F(RunStepWhileStopped, RunStepRejectsWhenRuntimeStopped) {
     /* Stop the runtime — all running modules become PAUSED. */
     ASSERT_EQ(fuse_stop(), FUSE_SUCCESS);
 
-    /* run_step returns NOT_INITIALIZED when runtime is stopped. */
-    EXPECT_EQ(fuse_module_run_step(id), FUSE_ERR_NOT_INITIALIZED);
+    /* run_step returns INVALID_ARG when runtime is stopped (not uninitialised). */
+    EXPECT_EQ(fuse_module_run_step(id), FUSE_ERR_INVALID_ARG);
 
     /* Restart so TearDown's fuse_stop() doesn't assert. */
     EXPECT_EQ(fuse_restart(), FUSE_SUCCESS);
