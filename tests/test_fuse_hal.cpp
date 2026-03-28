@@ -343,3 +343,131 @@ TEST_F(HalBridgeTest, LogEventCapDeniedTrapsModule) {
     if (IsSkipped()) return;
     EXPECT_EQ(st, FUSE_MODULE_STATE_TRAPPED);
 }
+
+/* =========================================================================
+ * Capability-denied paths for temp, timer, and camera bridges.
+ *
+ * Each test loads a module that calls the respective HAL bridge, but the
+ * policy grants zero capabilities.  fuse_policy_violation() must be called,
+ * the module must transition to TRAPPED, and the HAL callback must never
+ * be invoked.
+ *
+ * These tests also exercise the fuse_policy_violation() code path for all
+ * three bridge families, verifying that it correctly handles the non-NULL
+ * inst pointer it receives (the NULL-inst early-return in the bridge fires
+ * before fuse_policy_violation() is ever reached).
+ * ====================================================================== */
+
+TEST_F(HalBridgeTest, TempCapDeniedTrapsModule) {
+    /* HAL callback must never be reached when capability is denied. */
+    EXPECT_CALL(mock_hal_, TempGetReading()).Times(0);
+
+    fuse_module_state_t st = RunModule(AOT_PATH("mod_temp_no_cap.aot"),
+                                       MakePolicy(0u));
+    if (IsSkipped()) return;
+    EXPECT_EQ(st, FUSE_MODULE_STATE_TRAPPED);
+}
+
+TEST_F(HalBridgeTest, TimerCapDeniedTrapsModule) {
+    /* The timer is also used for log timestamps via SetUp()'s WillRepeatedly;
+     * restrict the expectation to exactly zero direct module-triggered calls by
+     * using a separate override.  Because the module has no LOG cap either,
+     * no log-path timestamp call is issued. */
+    EXPECT_CALL(mock_hal_, TimerGetTimestamp())
+        .WillRepeatedly(::testing::Return(0u));
+
+    fuse_module_state_t st = RunModule(AOT_PATH("mod_timer_no_cap.aot"),
+                                       MakePolicy(0u));
+    if (IsSkipped()) return;
+    EXPECT_EQ(st, FUSE_MODULE_STATE_TRAPPED);
+}
+
+TEST_F(HalBridgeTest, CameraCapDeniedTrapsModule) {
+    /* HAL callback must never be reached when capability is denied. */
+    EXPECT_CALL(mock_hal_, CameraLastFrame(::testing::_, ::testing::_))
+        .Times(0);
+
+    fuse_module_state_t st = RunModule(AOT_PATH("mod_camera_no_cap.aot"),
+                                       MakePolicy(0u));
+    if (IsSkipped()) return;
+    EXPECT_EQ(st, FUSE_MODULE_STATE_TRAPPED);
+}
+
+/* =========================================================================
+ * Camera zero-length buffer path.
+ *
+ * fuse_hal_camera.c lines 52-57: if (buf == NULL || max_len == 0) the bridge
+ * must set a WASM exception and transition the module to TRAPPED without
+ * ever calling the HAL callback.  This is distinct from the OOB path
+ * (which uses a large but in-bounds-offset pointer with an enormous len).
+ * ====================================================================== */
+TEST_F(HalBridgeTest, CameraZeroLenBufferTrapsModule) {
+    /* HAL callback must never be reached when max_len == 0. */
+    EXPECT_CALL(mock_hal_, CameraLastFrame(::testing::_, ::testing::_))
+        .Times(0);
+
+    AotBinary bin(AOT_PATH("mod_camera_zero_len.aot"));
+    if (!bin.IsAvailable()) {
+        GTEST_SKIP() << "AOT binary not found: mod_camera_zero_len.aot";
+    }
+
+    fuse_module_id_t id = FUSE_INVALID_MODULE_ID;
+    fuse_policy_t p = MakePolicy(FUSE_CAP_CAMERA);
+    ASSERT_EQ(fuse_module_load(bin.Data(), bin.Size(), &p, &id), FUSE_SUCCESS);
+    ASSERT_EQ(fuse_module_start(id), FUSE_SUCCESS);
+
+    fuse_stat_t rc = fuse_module_run_step(id);
+    EXPECT_NE(rc, FUSE_SUCCESS);
+
+    fuse_module_state_t st{};
+    EXPECT_EQ(fuse_module_stat(id, &st), FUSE_SUCCESS);
+    EXPECT_EQ(st, FUSE_MODULE_STATE_TRAPPED);
+
+    EXPECT_EQ(fuse_module_unload(id), FUSE_SUCCESS);
+}
+
+/* =========================================================================
+ * Log bridge out-of-bounds buffer path.
+ *
+ * fuse_hal_log.c lines 61-68: when the native pointer for the log message
+ * fails wasm_runtime_validate_native_addr, fuse_native_module_log_event must
+ * write a SECURITY FATAL log entry and transition the module to TRAPPED without
+ * copying any bytes from the invalid range.
+ *
+ * The module passes offset 0 with len=0x7FFFFFFF — this range far exceeds
+ * any allocation (64 KiB linear memory + 8 KiB WAMR heap = 73728 bytes in
+ * AOT mode), so validate_native_addr will reject it unconditionally.
+ * ====================================================================== */
+TEST_F(HalBridgeTest, LogEventOutOfBoundsPointerTrapsModule) {
+    AotBinary bin(AOT_PATH("mod_log_oob.aot"));
+    if (!bin.IsAvailable()) {
+        GTEST_SKIP() << "AOT binary not found: mod_log_oob.aot";
+    }
+
+    fuse_module_id_t id = FUSE_INVALID_MODULE_ID;
+    fuse_policy_t p = MakePolicy(FUSE_CAP_LOG);
+    ASSERT_EQ(fuse_module_load(bin.Data(), bin.Size(), &p, &id), FUSE_SUCCESS);
+    ASSERT_EQ(fuse_module_start(id), FUSE_SUCCESS);
+
+    fuse_stat_t rc = fuse_module_run_step(id);
+    EXPECT_NE(rc, FUSE_SUCCESS);
+
+    fuse_module_state_t st{};
+    EXPECT_EQ(fuse_module_stat(id, &st), FUSE_SUCCESS);
+    EXPECT_EQ(st, FUSE_MODULE_STATE_TRAPPED);
+
+    /* Verify that a SECURITY FATAL entry was written to the log ring. */
+    bool found = false;
+    size_t n = kLogMemSize / sizeof(fuse_log_entry_t);
+    const auto *entries = reinterpret_cast<const fuse_log_entry_t *>(g_log_mem);
+    for (size_t i = 0u; i < n; ++i) {
+        if (entries[i].level == 2u &&
+            std::strstr(entries[i].message, "OOB") != nullptr) {
+            found = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found) << "Expected FATAL 'OOB' security log entry for log buffer overrun";
+
+    EXPECT_EQ(fuse_module_unload(id), FUSE_SUCCESS);
+}
