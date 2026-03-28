@@ -76,9 +76,10 @@ A WAMR(wasm-micro-runtime) based, highly secure and flexible edge runtime librar
 # Clean build — all HAL groups enabled by default (suitable for tests)
 ./build.py -c
 
-# Build for a specific application (enables only the HAL groups in app_config.json)
-cmake -DFUSE_APP_CONFIG=$(pwd)/demos/camera_compress/app_config.json -B build .
-cmake --build build
+# Build a demo standalone (each demo drives its own fuse core compilation)
+cd demos/camera_compress && ./build.sh          # Release
+cd demos/camera_compress && ./build.sh --clean  # clean rebuild
+cd demos/camera_compress && ./build.sh --debug  # Debug
 
 # Debug build
 ./build.py -c -b Debug

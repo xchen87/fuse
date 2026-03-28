@@ -23,14 +23,21 @@ set(WAMR_ROOT_DIR ${CMAKE_CURRENT_LIST_DIR}/wasm-micro-runtime)
 include(${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
 add_library(vmlib ${WAMR_RUNTIME_LIB_SOURCE})
 
-include(FetchContent)
-FetchContent_Declare(
-    googletest
-    GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG v1.17.0
-)
-FetchContent_MakeAvailable(googletest)
-enable_testing()
+# ---------------------------------------------------------------------------
+# GoogleTest and unit tests — only when fuse is the top-level project.
+# When a demo adds fuse via add_subdirectory(), this block is skipped so
+# GoogleTest is not fetched and tests are not added to the demo's build.
+# ---------------------------------------------------------------------------
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.17.0
+    )
+    FetchContent_MakeAvailable(googletest)
+    enable_testing()
+endif()
 
 file(GLOB SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/core/*.c"
@@ -71,7 +78,7 @@ if(FUSE_APP_CONFIG)
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/generated")
     execute_process(
         COMMAND "${Python3_EXECUTABLE}"
-                "${CMAKE_SOURCE_DIR}/tools/gen_app_config.py"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_app_config.py"
                 --input  "${FUSE_APP_CONFIG}"
                 --output-dir "${CMAKE_BINARY_DIR}/generated"
         RESULT_VARIABLE _gen_result
@@ -97,5 +104,9 @@ foreach(_grp TEMP_SENSOR TIMER CAMERA)
     endif()
 endforeach()
 
-add_subdirectory(tests)
-add_subdirectory(demos/camera_compress)
+# ---------------------------------------------------------------------------
+# Tests — only when fuse is the top-level project (demos build separately)
+# ---------------------------------------------------------------------------
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    add_subdirectory(tests)
+endif()

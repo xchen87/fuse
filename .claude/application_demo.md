@@ -104,37 +104,41 @@ instead of hardcoded numbers.
 
 ---
 
-## Step 4 — Write the Demo CMakeLists.txt (use `@developer`)
+## Step 4 — Write the Demo CMakeLists.txt and build.sh (use `@developer`)
 
-Create `demos/<name>/CMakeLists.txt`. Key pattern:
+**Copy the boilerplate from `demos/demo_template/`** — both files are ready to use:
 
-```cmake
-# Toolchain discovery (wasi-clang, wamrc, python3) — same as camera_compress demo
-
-# Output directory
-set(DEMO_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/out")
-file(MAKE_DIRECTORY "${DEMO_OUT_DIR}")
-
-# WASM → AOT (if toolchain available)
-if(WASI_CLANG AND WAMRC)
-    add_custom_command(OUTPUT "${MODULE_WASM}" ...)
-    add_custom_command(OUTPUT "${MODULE_AOT}"  ...)
-    add_custom_target(<name>_aot ALL DEPENDS "${MODULE_AOT}")
-endif()
-
-# Host executable
-add_executable(<name>_host host/main.c)
-target_include_directories(<name>_host PRIVATE "${CMAKE_SOURCE_DIR}/include")
-if(FUSE_APP_CONFIG)
-    target_include_directories(<name>_host PRIVATE "${CMAKE_BINARY_DIR}/generated")
-endif()
-target_link_libraries(<name>_host PRIVATE fuse)
+```bash
+cp demos/demo_template/CMakeLists.txt demos/<name>/CMakeLists.txt
+cp demos/demo_template/build.sh       demos/<name>/build.sh
+chmod +x demos/<name>/build.sh
 ```
 
-Register the demo in `CMakeLists.txt` at the project root:
+Then in `demos/<name>/CMakeLists.txt`, replace the one placeholder:
 ```cmake
-add_subdirectory(demos/<name>)
+project(<demo_name>_demo C CXX)   # ← replace <demo_name> with your demo name
 ```
+
+Everything else is driven by the project name automatically (`DEMO_NAME`, `MODULE_NAME`,
+output paths, target names). `build.sh` is generic — copy verbatim, no edits needed.
+
+**Key design rules (already implemented in the template):**
+
+- Each demo is a **standalone CMake project** — it is NOT added to the fuse root via
+  `add_subdirectory`. It has its own `project()` declaration.
+- The demo includes fuse as a subdirectory: `add_subdirectory("${FUSE_DIR}" fuse_build)`.
+  Fuse detects it is not the top-level project and skips GoogleTest + tests.
+- `FUSE_APP_CONFIG` is set to the demo's own `app_config.json` before `add_subdirectory`,
+  so fuse compiles with only this demo's HAL groups.
+- No explicit `target_include_directories` for fuse headers or generated config — they
+  propagate automatically via the `fuse` target's PUBLIC properties:
+  - `fuse/include` → `fuse.h`, `fuse_types.h`
+  - `<build>/generated/` → `fuse_app_config.h`, `FUSE_POLICY_*` macros
+  - `FUSE_HAL_ENABLE_*` compile definitions → consistent `fuse_hal_t` layout
+- `_GNU_SOURCE` defined on the host executable for POSIX APIs (`clock_gettime`,
+  `sigaction`, `usleep`) — Linux demo hosts require this with `-std=c99`.
+
+**Do NOT add the demo to the fuse root `CMakeLists.txt`** — demos are fully standalone.
 
 ---
 
@@ -149,15 +153,21 @@ All new C files must pass `@sentinel` before merging:
 ## Step 6 — Build and Test
 
 ```bash
-# Build with the demo's app config
-cmake -DFUSE_APP_CONFIG=$(pwd)/demos/<name>/app_config.json -B build .
-cmake --build build
+# Build the demo standalone (drives fuse core compilation with its own HAL config)
+cd demos/<name>
+./build.sh
 
-# Run FUSE unit tests (must all pass)
-cd build && ctest
+# Clean rebuild
+./build.sh --clean
+
+# Debug build
+./build.sh --debug
+
+# Run FUSE unit tests separately (fuse core build, all HAL groups enabled)
+cd /path/to/fuse && ./build.py -c && cd build && ctest
 
 # Run the demo
-./build/demos/<name>/<name>_host ./build/demos/<name>/out/<module_name>.aot
+./build/<name>_host ./build/out/<module_name>.aot
 ```
 
 ---
