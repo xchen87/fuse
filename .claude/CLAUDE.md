@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session Startup Check
+**At the start of every session, before doing any other work**, run this check:
+```bash
+test -f wasm-micro-runtime/wamr-compiler/build/wamrc && echo "wamrc OK" || echo "wamrc MISSING"
+```
+- If **MISSING**: immediately notify the user with this message before proceeding:
+  > **wamrc is not built.** Unit tests that execute WASM modules will be skipped, and demo AOT binaries cannot be compiled. To build it (one-time, ~45 min):
+  > ```bash
+  > cd wasm-micro-runtime/wamr-compiler && ./build_llvm.sh --arch X86
+  > mkdir -p build && cd build && cmake .. && make -j$(nproc)
+  > ```
+- If **OK**: proceed silently — do not mention wamrc to the user.
+
 # FUSE runtime (Flexible Universal Secure Edge Runtime)
 **NOTE**: Always update `.claude/CLAUDE.md`, never create a root `CLAUDE.md`
 **Goals:** Space grade WAMR(Wasm-micro-runtime) based runtime that provide secure sandboxes for application modules, with review-friendly policies
