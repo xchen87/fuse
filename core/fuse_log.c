@@ -47,12 +47,16 @@ void fuse_log_write(fuse_log_ctx_t *ctx, fuse_module_id_t id,
     slot  = ctx->write_idx % ctx->capacity;
     entry = &ctx->entries[slot];
 
-    /* Timestamp via HAL if available. */
-    if (g_ctx.hal.timer_get_timestamp != NULL) {
-        entry->timestamp_us = g_ctx.hal.timer_get_timestamp();
+    /* Timestamp via HAL timer group if available. */
+#ifdef FUSE_HAL_ENABLE_TIMER
+    if (g_ctx.hal.timer.get_timestamp != NULL) {
+        entry->timestamp_us = g_ctx.hal.timer.get_timestamp();
     } else {
         entry->timestamp_us = 0u;
     }
+#else
+    entry->timestamp_us = 0u;
+#endif
 
     entry->module_id = id;
     entry->level     = level;

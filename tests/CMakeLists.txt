@@ -101,11 +101,16 @@ set(WAT_MODULES
     mod_with_init_deinit
     mod_no_step
     mod_temp
+    mod_temp_no_cap
     mod_timer
+    mod_timer_no_cap
     mod_camera
     mod_camera_oob
+    mod_camera_no_cap
+    mod_camera_zero_len
     mod_log
     mod_log_long
+    mod_log_oob
 )
 
 foreach(_mod ${WAT_MODULES})
@@ -137,8 +142,13 @@ target_include_directories(fuse_test PRIVATE
 )
 
 # Tell test helper header where .aot files live at runtime.
+# Explicitly enable all HAL groups for tests — tests exercise all capabilities
+# regardless of any application-level FUSE_APP_CONFIG setting.
 target_compile_definitions(fuse_test PRIVATE
     FUSE_AOT_DIR="${FUSE_AOT_DIR}"
+    FUSE_HAL_ENABLE_TEMP_SENSOR=1
+    FUSE_HAL_ENABLE_TIMER=1
+    FUSE_HAL_ENABLE_CAMERA=1
 )
 
 # If AOT binaries were requested, make the test target depend on them.

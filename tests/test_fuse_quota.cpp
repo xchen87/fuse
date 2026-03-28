@@ -154,7 +154,7 @@ TEST_F(QuotaArmCancel, NullQuotaArmCallbackNoCrash) {
     EXPECT_CALL(mock_hal_, QuotaCancel(::testing::_)).Times(0);
 
     fuse_hal_t hal{};
-    hal.timer_get_timestamp = MockHal::MakeHal().timer_get_timestamp;
+    hal.timer.get_timestamp = MockHal::MakeHal().timer.get_timestamp;
     /* quota_arm and quota_cancel are NULL in the hal struct */
     ASSERT_EQ(fuse_init(g_module_mem, kModuleMemSize,
                         g_log_mem, kLogMemSize, &hal), FUSE_SUCCESS);
@@ -294,7 +294,7 @@ TEST_F(QuotaExpiredEdgeCases, CalledWithOutOfRangeIdNoCrash) {
     EXPECT_CALL(m, TimerGetTimestamp()).WillRepeatedly(::testing::Return(0u));
 
     fuse_hal_t hal{};
-    hal.timer_get_timestamp = MockHal::MakeHalTimerOnly().timer_get_timestamp;
+    hal.timer.get_timestamp = MockHal::MakeHalTimerOnly().timer.get_timestamp;
     ASSERT_EQ(fuse_init(mod_mem, sizeof(mod_mem),
                         log_mem, sizeof(log_mem), &hal), FUSE_SUCCESS);
 
@@ -319,7 +319,7 @@ TEST_F(QuotaExpiredEdgeCases, CalledForUnusedSlotNoCrash) {
     EXPECT_CALL(m, TimerGetTimestamp()).WillRepeatedly(::testing::Return(0u));
 
     fuse_hal_t hal{};
-    hal.timer_get_timestamp = MockHal::MakeHalTimerOnly().timer_get_timestamp;
+    hal.timer.get_timestamp = MockHal::MakeHalTimerOnly().timer.get_timestamp;
     ASSERT_EQ(fuse_init(mod_mem, sizeof(mod_mem),
                         log_mem, sizeof(log_mem), &hal), FUSE_SUCCESS);
 

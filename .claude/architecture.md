@@ -25,6 +25,27 @@ erDiagram
     *Module* }o--|| *FUSE*: *module_api_spec*
     *FUSE* ||--|| *Host*: *module_api_spec*
 ```
+## HAL Group Architecture
+Hardware APIs are organized into compile-time-conditional groups. Each group lives under `core/<group>/`:
+
+| Group | Source | Flag | Capability |
+|-------|--------|------|------------|
+| Temperature sensor | `core/temp/` | `FUSE_HAL_ENABLE_TEMP_SENSOR` | `FUSE_CAP_TEMP_SENSOR` |
+| Timer | `core/timer/` | `FUSE_HAL_ENABLE_TIMER` | `FUSE_CAP_TIMER` |
+| Camera | `core/camera/` | `FUSE_HAL_ENABLE_CAMERA` | `FUSE_CAP_CAMERA` |
+| Log | `core/log/` | *(always compiled)* | `FUSE_CAP_LOG` |
+
+**Compile-time selection**: `FUSE_HAL_ENABLE_*` flags are set from `app_config.json` via
+`tools/gen_app_config.py` → `fuse_hal_flags.cmake` → `target_compile_definitions(fuse PUBLIC ...)`.
+The entire body of each group `.c` file is wrapped in its `#ifdef` guard, producing zero dead code
+when a group is disabled. Without `-DFUSE_APP_CONFIG=...`, all groups are enabled (dev/test default).
+
+**Validation rule**: every module's `capabilities` (excluding `LOG`) must be a subset of the
+platform's `hal_groups` in `app_config.json`. `gen_app_config.py` enforces this at configure time.
+
+**WAMR registration**: `fuse_init()` calls `fuse_hal_<group>_register_natives()` per enabled group
+after `wasm_runtime_full_init()`. The log group is always registered unconditionally.
+
 ## Security Constraints
 - Memory Isolation: *Module* is restricted to its own Linear Memory. *FUSE* must validate all incoming memory access against *Policy*
 - No Dynamic Allocation: *module_api_spec* shall not trigger malloc/free. All data transfers must use pre-allocated buffers.

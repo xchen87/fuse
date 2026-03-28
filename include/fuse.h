@@ -23,25 +23,37 @@ extern "C" {
 #endif
 
 /* ---------------------------------------------------------------------------
- * HAL callback typedefs
+ * HAL group headers
  *
- * The Host implements each callback and provides them via fuse_hal_t during
- * fuse_init().  FUSE never calls Host hardware directly — it always routes
- * through these pointers so the same library works on bare-metal, RTOS, and
- * unit-test environments.
+ * Each hardware group is conditionally compiled when its FUSE_HAL_ENABLE_*
+ * flag is defined.  The group header contributes one sub-struct member to
+ * fuse_hal_t.
+ *
+ * IMPORTANT: All FUSE_HAL_ENABLE_* flags must be consistent between the fuse
+ * library compile and any consumer (host app, tests) that declares a fuse_hal_t
+ * — CMake propagates them via PUBLIC target_compile_definitions.
+ *
+ * The log group is always present and does NOT appear in fuse_hal_t (it writes
+ * to FUSE's internal ring buffer, not a host hardware callback).
  * --------------------------------------------------------------------------- */
+#ifdef FUSE_HAL_ENABLE_TEMP_SENSOR
+#include "../core/temp/fuse_hal_temp.h"
+#endif
 
-/** Read temperature from Host sensor.  Returns Celsius as a float. */
-typedef float (*fuse_hal_temp_fn)(void);
+#ifdef FUSE_HAL_ENABLE_TIMER
+#include "../core/timer/fuse_hal_timer.h"
+#endif
 
-/** Return elapsed time in microseconds (monotonic). */
-typedef uint64_t (*fuse_hal_timer_fn)(void);
+#ifdef FUSE_HAL_ENABLE_CAMERA
+#include "../core/camera/fuse_hal_camera.h"
+#endif
 
-/**
- * Copy the most recent camera frame into buf[0..max_len-1].
- * Returns the actual number of bytes written.
- */
-typedef uint64_t (*fuse_hal_camera_fn)(void *buf, uint32_t max_len);
+/* ---------------------------------------------------------------------------
+ * HAL quota callback typedefs
+ *
+ * Quota is cross-cutting infrastructure, not a hardware sensor group.
+ * Always present regardless of which HAL groups are enabled.
+ * --------------------------------------------------------------------------- */
 
 /**
  * Arm a one-shot timer for the given module.
@@ -57,13 +69,29 @@ typedef void (*fuse_hal_quota_arm_fn)(fuse_module_id_t module_id,
  */
 typedef void (*fuse_hal_quota_cancel_fn)(fuse_module_id_t module_id);
 
-/** Collection of all HAL callbacks supplied by the Host at init time. */
+/**
+ * HAL struct supplied by the Host at fuse_init() time.
+ *
+ * Only members for enabled hardware groups are compiled in.  All function
+ * pointer fields within each group may be NULL; FUSE silently returns 0/void
+ * when a NULL callback is invoked.
+ *
+ * All FUSE_HAL_ENABLE_* compile flags must be identical between the fuse
+ * library and any translation unit that declares a fuse_hal_t variable so
+ * that the struct layout is consistent.
+ */
 typedef struct {
-    fuse_hal_temp_fn         temp_get_reading;   /* may be NULL */
-    fuse_hal_timer_fn        timer_get_timestamp; /* may be NULL */
-    fuse_hal_camera_fn       camera_last_frame;  /* may be NULL */
-    fuse_hal_quota_arm_fn    quota_arm;          /* may be NULL */
-    fuse_hal_quota_cancel_fn quota_cancel;       /* may be NULL */
+#ifdef FUSE_HAL_ENABLE_TEMP_SENSOR
+    fuse_hal_temp_group_t    temp;    /**< Temperature sensor group. */
+#endif
+#ifdef FUSE_HAL_ENABLE_TIMER
+    fuse_hal_timer_group_t   timer;   /**< Timer / timestamp group. */
+#endif
+#ifdef FUSE_HAL_ENABLE_CAMERA
+    fuse_hal_camera_group_t  camera;  /**< Camera frame capture group. */
+#endif
+    fuse_hal_quota_arm_fn    quota_arm;    /**< Arm one-shot quota timer; may be NULL. */
+    fuse_hal_quota_cancel_fn quota_cancel; /**< Cancel quota timer; may be NULL. */
 } fuse_hal_t;
 
 /* ---------------------------------------------------------------------------

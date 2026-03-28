@@ -51,11 +51,16 @@ A WAMR(wasm-micro-runtime) based, highly secure and flexible edge runtime librar
 
 ## Project Structure
 - `./core`: contains all .c source code for all core runtime functions and WAMR bridges
+  - `./core/temp/`: temperature sensor HAL group (`fuse_hal_temp.h`, `fuse_hal_temp.c`)
+  - `./core/timer/`: timer HAL group (`fuse_hal_timer.h`, `fuse_hal_timer.c`)
+  - `./core/camera/`: camera HAL group (`fuse_hal_camera.h`, `fuse_hal_camera.c`)
+  - `./core/log/`: log bridge — always compiled (`fuse_hal_log.h`, `fuse_hal_log.c`)
 - `./include`: contains .h header files & api definitions
 - `./tests`: contains all test cases
-- `./demos/`: contains demo applications (host calls + wasm modules for specific applications)
-- `./cmake/`: contains all .cmake files
+- `./demos/`: contains demo applications; each demo has its own `app_config.json`
 - `./tools/`: contains scripts that @scripter may use and keep
+  - `./tools/policy_to_bin.py`: standalone policy JSON → 24-byte binary converter
+  - `./tools/gen_app_config.py`: app_config.json → C header + CMake flags + policy binaries
 - `./wasm-micro-runtime/`: submodule that links to WAMR git repo, as project backbone
 - `./CMakeLists.txt`: main cmake build entry
 - `./build.py`: main build command entry to initiate compile and testings
@@ -68,8 +73,12 @@ A WAMR(wasm-micro-runtime) based, highly secure and flexible edge runtime librar
 
 ## Build & Test Commands
 ```bash
-# Clean build (recommended when changing CMake config)
+# Clean build — all HAL groups enabled by default (suitable for tests)
 ./build.py -c
+
+# Build for a specific application (enables only the HAL groups in app_config.json)
+cmake -DFUSE_APP_CONFIG=$(pwd)/demos/camera_compress/app_config.json -B build .
+cmake --build build
 
 # Debug build
 ./build.py -c -b Debug
@@ -79,6 +88,11 @@ cd build && ctest
 
 # Run a single test by name
 cd build && ./tests/fuse_test --gtest_filter=TestSuiteName.TestCaseName
+
+# Generate app config artifacts manually (header + cmake flags + policy binaries)
+python3 tools/gen_app_config.py \
+    --input demos/camera_compress/app_config.json \
+    --output-dir build/generated
 
 # Compile a WASM module: C source → wasm → AOT
 /opt/wasi-sdk/bin/clang --sysroot=/opt/wasi-sdk/share/wasi-sysroot -o module.wasm module.c
@@ -112,9 +126,55 @@ void module_step(void) { /* one unit of work — no infinite loops */ }
 Optional exports: `module_init()` (called once on first start), `module_deinit()` (called on unload).
 `fuse_module_load()` will fail if `module_step` is not exported.
 
-## Reviewable Module Policy
-Every FUSE *Module* **must** provide a policy written in json for review before deployment.
+## Reviewable Application Policy
+Every FUSE deployment **must** have an `app_config.json` at the demo root for review before deployment.
+This single file declares: which hardware groups are available on the platform, memory pool sizes, and
+each module's full policy (capabilities, memory, CPU quota, scheduling interval).
 
+## HAL Group System
+FUSE hardware APIs are organized into compile-time-conditional groups under `core/<group>/`:
+
+| Group | Flag | Capability bit | Source | Note |
+|-------|------|---------------|--------|------|
+| `temp_sensor` | `FUSE_HAL_ENABLE_TEMP_SENSOR` | `FUSE_CAP_TEMP_SENSOR=0x01` | `core/temp/` | |
+| `timer` | `FUSE_HAL_ENABLE_TIMER` | `FUSE_CAP_TIMER=0x02` | `core/timer/` | also drives log timestamps |
+| `camera` | `FUSE_HAL_ENABLE_CAMERA` | `FUSE_CAP_CAMERA=0x04` | `core/camera/` | |
+| `log` | *(always on)* | `FUSE_CAP_LOG=0x08` | `core/log/` | writes to FUSE internal ring buffer, no host callback |
+
+**Key rules:**
+- `hal_groups` in `app_config.json` lists hardware present on the platform (never include `"log"` — it's always registered)
+- Module `capabilities` in policy must be a subset of `hal_groups ∪ {LOG}`
+- `FUSE_HAL_ENABLE_*` flags are set PUBLIC on the `fuse` CMake target — consumers automatically inherit consistent struct layout
+- Without `-DFUSE_APP_CONFIG=...`, all groups are enabled (default for test/dev builds)
+
+## Application Config JSON (`app_config.json`)
+Each demo defines its complete deployment in one reviewable file:
+```json
+{
+  "application": {
+    "name": "camera_compress",
+    "max_modules": 1,
+    "wamr_pool_bytes": 8388608,
+    "log_pool_bytes": 65536,
+    "hal_groups": ["timer", "camera"]
+  },
+  "modules": [
+    {
+      "name": "camera_compress",
+      "binary": "out/camera_compress.aot",
+      "policy": {
+        "capabilities": ["TIMER", "CAMERA", "LOG"],
+        "memory_pages_max": 62,
+        "stack_size": 8192,
+        "heap_size": 262144,
+        "cpu_quota_us": 1000,
+        "step_interval_us": 10000000
+      }
+    }
+  ]
+}
+```
+`tools/gen_app_config.py` validates and converts this to `fuse_app_config.h`, `fuse_hal_flags.cmake`, and per-module `*_policy.bin`.
 
 ## Key Types Quick Reference
 *(Defined in `include/fuse_types.h` and `include/fuse.h` — no need to re-read those files)*
@@ -126,7 +186,7 @@ Every FUSE *Module* **must** provide a policy written in json for review before 
 
 **Capability bits**: `FUSE_CAP_TEMP_SENSOR=0x01` `FUSE_CAP_TIMER=0x02` `FUSE_CAP_CAMERA=0x04` `FUSE_CAP_LOG=0x08`
 
-**`fuse_policy_t`** — 6 × uint32_t (24 bytes, little-endian binary layout used by `tools/policy_to_bin.py`):
+**`fuse_policy_t`** — 6 × uint32_t (24 bytes, little-endian binary layout):
 ```c
 typedef struct { uint32_t capabilities; uint32_t memory_pages_max;
                  uint32_t stack_size; uint32_t heap_size; uint32_t cpu_quota_us;
@@ -134,16 +194,18 @@ typedef struct { uint32_t capabilities; uint32_t memory_pages_max;
 ```
 **Constants**: `FUSE_INVALID_MODULE_ID=UINT32_MAX` `FUSE_MAX_MODULES=8` `FUSE_LOG_MSG_MAX=128`
 
-**`fuse_hal_t`** — all fields may be NULL:
+**`fuse_hal_t`** — compile-time conditional grouped struct (members present only for enabled groups):
 ```c
 typedef struct {
-    float     (*temp_get_reading)(void);
-    uint64_t  (*timer_get_timestamp)(void);
-    uint64_t  (*camera_last_frame)(void *buf, uint32_t max_len);
-    void      (*quota_arm)(fuse_module_id_t mid, uint32_t quota_us);
-    void      (*quota_cancel)(fuse_module_id_t mid);
+    fuse_hal_temp_group_t    temp;         /* #ifdef FUSE_HAL_ENABLE_TEMP_SENSOR */
+    fuse_hal_timer_group_t   timer;        /* #ifdef FUSE_HAL_ENABLE_TIMER       */
+    fuse_hal_camera_group_t  camera;       /* #ifdef FUSE_HAL_ENABLE_CAMERA      */
+    fuse_hal_quota_arm_fn    quota_arm;    /* always present; may be NULL        */
+    fuse_hal_quota_cancel_fn quota_cancel; /* always present; may be NULL        */
 } fuse_hal_t;
+/* Group structs: .temp.get_reading  .timer.get_timestamp  .camera.last_frame */
 ```
+Initialize with designated initializers: `hal.timer.get_timestamp = my_fn;`
 
 **Complete `fuse.h` API signatures** (do not re-read fuse.h):
 ```c

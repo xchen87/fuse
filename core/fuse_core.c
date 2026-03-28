@@ -2,15 +2,16 @@
  * Copyright (c) 2026 FUSE Project. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  *
- * fuse_core.c — FUSE runtime initialisation, lifecycle management, and the
- *               WAMR native-symbol registration table.
+ * fuse_core.c — FUSE runtime initialisation and lifecycle management.
  *
  * This translation unit owns the single global fuse_context_t (g_ctx) and
  * implements fuse_init(), fuse_stop(), fuse_restart(), and the quota-expiry
  * interrupt handler fuse_quota_expired().
  *
- * The NativeSymbol table registered here maps every module_api_spec symbol to
- * the native implementations in fuse_hal.c.
+ * HAL native symbols are registered per hardware group via
+ * fuse_hal_<group>_register_natives() calls in fuse_init(), after
+ * wasm_runtime_full_init() succeeds.  Each group source file owns its own
+ * NativeSymbol table and registration function.
  */
 
 #include "fuse_internal.h"
@@ -21,46 +22,6 @@
  * Global runtime context (definition — extern declared in fuse_internal.h)
  * --------------------------------------------------------------------------- */
 fuse_context_t g_ctx;
-
-/* ---------------------------------------------------------------------------
- * WAMR NativeSymbol table
- *
- * Signature encoding (WAMR convention):
- *   ()f   — no params, returns f32
- *   ()I   — no params, returns i64
- *   (*~)I — (void* buf, uint32_t len) returns i64
- *           '*' = pointer auto-converted by WAMR, '~' = paired length
- *   (*~i) — (void* buf, uint32_t len, int32 level) no return
- * --------------------------------------------------------------------------- */
-static NativeSymbol k_native_symbols[] = {
-    {
-        "temp_get_reading",
-        (void *)fuse_native_temp_get_reading,
-        "()f",
-        NULL
-    },
-    {
-        "timer_get_timestamp",
-        (void *)fuse_native_timer_get_timestamp,
-        "()I",
-        NULL
-    },
-    {
-        "camera_last_frame",
-        (void *)fuse_native_camera_last_frame,
-        "(*~)I",
-        NULL
-    },
-    {
-        "module_log_event",
-        (void *)fuse_native_module_log_event,
-        "(*~i)",
-        NULL
-    }
-};
-
-#define K_NATIVE_SYMBOL_COUNT \
-    ((uint32_t)(sizeof(k_native_symbols) / sizeof(k_native_symbols[0])))
 
 /* ---------------------------------------------------------------------------
  * fuse_init
@@ -110,15 +71,22 @@ fuse_stat_t fuse_init(void *module_memory, size_t module_memory_size,
                    ? UINT32_MAX
                    : (uint32_t)module_memory_size);
 
-    /* Register native symbols under the "env" module namespace. */
-    init_args.native_module_name = "env";
-    init_args.native_symbols     = k_native_symbols;
-    init_args.n_native_symbols   = K_NATIVE_SYMBOL_COUNT;
-
     /* -- Initialise WAMR --------------------------------------------------- */
     if (!wasm_runtime_full_init(&init_args)) {
         return FUSE_ERR_MODULE_LOAD_FAILED;
     }
+
+    /* -- Register HAL native symbols per enabled hardware group ------------ */
+#ifdef FUSE_HAL_ENABLE_TEMP_SENSOR
+    fuse_hal_temp_register_natives();
+#endif
+#ifdef FUSE_HAL_ENABLE_TIMER
+    fuse_hal_timer_register_natives();
+#endif
+#ifdef FUSE_HAL_ENABLE_CAMERA
+    fuse_hal_camera_register_natives();
+#endif
+    fuse_hal_log_register_natives();  /* log group is always registered */
 
     /* -- Initialise security-log ring buffer ------------------------------- */
     log_capacity = (uint32_t)(log_memory_size / sizeof(fuse_log_entry_t));

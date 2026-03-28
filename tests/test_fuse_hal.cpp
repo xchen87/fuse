@@ -100,8 +100,8 @@ TEST_F(HalBridgeTest, TempNullHalCallbackReturnsZeroNoTrap) {
 
     /* Build a temporary HAL with timer but no temp callback. */
     fuse_hal_t hal{};
-    hal.timer_get_timestamp = MockHal::MakeHal().timer_get_timestamp;
-    /* temp_get_reading intentionally left NULL */
+    hal.timer.get_timestamp = MockHal::MakeHal().timer.get_timestamp;
+    /* temp.get_reading intentionally left NULL */
     ASSERT_EQ(fuse_init(g_module_mem, kModuleMemSize,
                         g_log_mem, kLogMemSize, &hal), FUSE_SUCCESS);
 
@@ -234,8 +234,8 @@ TEST_F(HalBridgeTest, CameraNullHalCallbackReturnsZeroNoTrap) {
     /* HAL with timer but no camera callback. mock_hal_ still in s_instance. */
     EXPECT_CALL(mock_hal_, CameraLastFrame(::testing::_, ::testing::_)).Times(0);
     fuse_hal_t hal{};
-    hal.timer_get_timestamp = MockHal::MakeHal().timer_get_timestamp;
-    /* camera_last_frame left NULL */
+    hal.timer.get_timestamp = MockHal::MakeHal().timer.get_timestamp;
+    /* camera.last_frame left NULL */
     ASSERT_EQ(fuse_init(g_module_mem, kModuleMemSize,
                         g_log_mem, kLogMemSize, &hal), FUSE_SUCCESS);
 

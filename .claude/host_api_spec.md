@@ -1,16 +1,53 @@
 # FUSE Host API Specification
 ***Host* uses these APIs to manage *FUSE* and *Module***
 
-## HAL Callback Structure
-The host provides hardware implementations at `fuse_init()` time. All fields may be NULL.
+## HAL Group Structure
+Hardware APIs are organized into compile-time-conditional groups. The host provides group structs at
+`fuse_init()` time. Only groups enabled via `FUSE_HAL_ENABLE_*` compile flags appear in `fuse_hal_t`.
+
 ```c
+/* Group sub-structs (each defined in core/<group>/fuse_hal_<group>.h) */
+typedef struct { float    (*get_reading)(void); }                       fuse_hal_temp_group_t;
+typedef struct { uint64_t (*get_timestamp)(void); }                     fuse_hal_timer_group_t;
+typedef struct { uint64_t (*last_frame)(void *buf, uint32_t max_len); } fuse_hal_camera_group_t;
+
+/* Quota callbacks — always present, not a hardware group */
+typedef void (*fuse_hal_quota_arm_fn)(fuse_module_id_t mid, uint32_t us);
+typedef void (*fuse_hal_quota_cancel_fn)(fuse_module_id_t mid);
+
+/* Compile-time conditional HAL struct */
 typedef struct {
-    float    (*temp_get_reading)(void);                          /* FUSE_CAP_TEMP_SENSOR */
-    uint64_t (*timer_get_timestamp)(void);                       /* FUSE_CAP_TIMER — µs monotonic */
-    uint64_t (*camera_last_frame)(void *buf, uint32_t max_len); /* FUSE_CAP_CAMERA — returns bytes written */
-    void     (*quota_arm)(fuse_module_id_t mid, uint32_t us);   /* arm one-shot timer; fire → fuse_quota_expired() */
-    void     (*quota_cancel)(fuse_module_id_t mid);             /* cancel armed timer on normal step return */
+#ifdef FUSE_HAL_ENABLE_TEMP_SENSOR
+    fuse_hal_temp_group_t    temp;    /* FUSE_CAP_TEMP_SENSOR */
+#endif
+#ifdef FUSE_HAL_ENABLE_TIMER
+    fuse_hal_timer_group_t   timer;   /* FUSE_CAP_TIMER — µs monotonic */
+#endif
+#ifdef FUSE_HAL_ENABLE_CAMERA
+    fuse_hal_camera_group_t  camera;  /* FUSE_CAP_CAMERA — returns bytes written */
+#endif
+    fuse_hal_quota_arm_fn    quota_arm;    /* arm one-shot timer; fire → fuse_quota_expired() */
+    fuse_hal_quota_cancel_fn quota_cancel; /* cancel armed timer on normal step return */
 } fuse_hal_t;
+```
+
+**Log group**: `module_log_event` is always registered with WAMR and writes to FUSE's internal ring
+buffer. It has no host hardware callback and does not appear in `fuse_hal_t`. Controlled only by
+`FUSE_CAP_LOG` in module policy.
+
+**HAL group registration**: after `wasm_runtime_full_init()` in `fuse_init()`, each enabled group's
+native symbols are registered via `fuse_hal_<group>_register_natives()` (defined in `core/<group>/`).
+The log group is always registered unconditionally.
+
+**Initialization example** (timer + camera only):
+```c
+fuse_hal_t hal;
+memset(&hal, 0, sizeof(hal));
+hal.timer.get_timestamp = my_timer_fn;
+hal.camera.last_frame   = my_camera_fn;
+hal.quota_arm           = my_quota_arm_fn;
+hal.quota_cancel        = my_quota_cancel_fn;
+fuse_init(mod_mem, mod_mem_sz, log_mem, log_mem_sz, &hal);
 ```
 
 ## *FUSE* Management APIs

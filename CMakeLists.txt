@@ -32,7 +32,13 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 enable_testing()
 
-file(GLOB SRCS "${CMAKE_CURRENT_SOURCE_DIR}/core/*.c")
+file(GLOB SRCS
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/temp/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/timer/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/camera/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/log/*.c"
+)
 add_library(fuse SHARED ${SRCS})
 target_include_directories(fuse
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -44,6 +50,52 @@ target_compile_options(fuse PRIVATE
     $<$<CONFIG:Debug>:-g -O0>
     $<$<CONFIG:Release>:-O3>
 )
+
+# ---------------------------------------------------------------------------
+# Application-level HAL group configuration
+#
+# Set -DFUSE_APP_CONFIG=<path/to/app_config.json> at cmake configure time to
+# compile FUSE with only the hardware groups declared in that application's
+# configuration.  If unset, all groups are enabled (suitable for test builds).
+#
+# The FUSE_HAL_ENABLE_* flags are propagated PUBLIC so that consuming targets
+# (demo host apps, test executables) see the same struct layout for fuse_hal_t.
+# ---------------------------------------------------------------------------
+set(FUSE_APP_CONFIG "" CACHE PATH
+    "Path to an application app_config.json; if empty, all HAL groups are enabled.")
+
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
+if(FUSE_APP_CONFIG)
+    message(STATUS "[fuse] App config: ${FUSE_APP_CONFIG}")
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/generated")
+    execute_process(
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/tools/gen_app_config.py"
+                --input  "${FUSE_APP_CONFIG}"
+                --output-dir "${CMAKE_BINARY_DIR}/generated"
+        RESULT_VARIABLE _gen_result
+        OUTPUT_VARIABLE _gen_output
+        ERROR_VARIABLE  _gen_error
+    )
+    if(NOT _gen_result EQUAL 0)
+        message(FATAL_ERROR "[fuse] gen_app_config.py failed:\n${_gen_error}")
+    endif()
+    include("${CMAKE_BINARY_DIR}/generated/fuse_hal_flags.cmake")
+    target_include_directories(fuse PUBLIC "${CMAKE_BINARY_DIR}/generated")
+else()
+    message(STATUS "[fuse] No FUSE_APP_CONFIG — enabling all HAL groups")
+    set(FUSE_HAL_ENABLE_TEMP_SENSOR 1)
+    set(FUSE_HAL_ENABLE_TIMER       1)
+    set(FUSE_HAL_ENABLE_CAMERA      1)
+endif()
+
+foreach(_grp TEMP_SENSOR TIMER CAMERA)
+    if(FUSE_HAL_ENABLE_${_grp})
+        target_compile_definitions(fuse PUBLIC "FUSE_HAL_ENABLE_${_grp}=1")
+        message(STATUS "[fuse] HAL group enabled: ${_grp}")
+    endif()
+endforeach()
 
 add_subdirectory(tests)
 add_subdirectory(demos/camera_compress)

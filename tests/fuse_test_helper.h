@@ -71,18 +71,18 @@ public:
     /* Build a fuse_hal_t that routes all callbacks through this mock. */
     static fuse_hal_t MakeHal() {
         fuse_hal_t h{};
-        h.temp_get_reading    = &MockHal::ThunkTemp;
-        h.timer_get_timestamp = &MockHal::ThunkTimer;
-        h.camera_last_frame   = &MockHal::ThunkCamera;
-        h.quota_arm           = &MockHal::ThunkQuotaArm;
-        h.quota_cancel        = &MockHal::ThunkQuotaCancel;
+        h.temp.get_reading     = &MockHal::ThunkTemp;
+        h.timer.get_timestamp  = &MockHal::ThunkTimer;
+        h.camera.last_frame    = &MockHal::ThunkCamera;
+        h.quota_arm            = &MockHal::ThunkQuotaArm;
+        h.quota_cancel         = &MockHal::ThunkQuotaCancel;
         return h;
     }
 
     /* Build a fuse_hal_t with only the timer hooked (used by log tests). */
     static fuse_hal_t MakeHalTimerOnly() {
         fuse_hal_t h{};
-        h.timer_get_timestamp = &MockHal::ThunkTimer;
+        h.timer.get_timestamp = &MockHal::ThunkTimer;
         return h;
     }
 

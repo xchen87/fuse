@@ -59,7 +59,7 @@ static uint64_t hal_camera(void *buf, uint32_t max_len)
 {
     /* buf has already been validated by fuse_native_camera_last_frame()
      * via wasm_runtime_validate_native_addr() before this callback is
-     * invoked (see core/fuse_hal.c:181).  A NULL check here is a
+     * invoked (see core/camera/fuse_hal_camera.c).  A NULL check here is a
      * defence-in-depth guard only. */
     if (buf == NULL || max_len == 0u) {
         return 0u;
@@ -231,8 +231,8 @@ int main(int argc, char *argv[])
     /* --- Initialise FUSE --- */
     fuse_hal_t hal;
     memset(&hal, 0, sizeof(hal));
-    hal.timer_get_timestamp = hal_timer;
-    hal.camera_last_frame   = hal_camera;
+    hal.timer.get_timestamp = hal_timer;
+    hal.camera.last_frame   = hal_camera;
     hal.quota_arm           = hal_quota_arm;
     hal.quota_cancel        = hal_quota_cancel;
 

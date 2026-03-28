@@ -1,0 +1,24 @@
+{
+    "application": {
+        "name": "camera_compress",
+        "description": "Camera frame RLE compression demo — captures frames and compresses with run-length encoding",
+        "max_modules": 1,
+        "wamr_pool_bytes": 8388608,
+        "log_pool_bytes": 65536,
+        "hal_groups": ["timer", "camera"]
+    },
+    "modules": [
+        {
+            "name": "camera_compress",
+            "binary": "out/camera_compress.aot",
+            "policy": {
+                "capabilities": ["TIMER", "CAMERA", "LOG"],
+                "memory_pages_max": 62,
+                "stack_size": 8192,
+                "heap_size": 262144,
+                "cpu_quota_us": 1000,
+                "step_interval_us": 10000000
+            }
+        }
+    ]
+}

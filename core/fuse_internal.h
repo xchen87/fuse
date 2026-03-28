@@ -79,8 +79,14 @@ typedef struct {
     fuse_hal_t          hal;
 } fuse_context_t;
 
-/* Defined in fuse_core.c; used by fuse_hal.c and fuse_module.c. */
+/* Defined in fuse_core.c; used by HAL group files and fuse_module.c. */
 extern fuse_context_t g_ctx;
+
+/* ---------------------------------------------------------------------------
+ * Log HAL group — always compiled.
+ * Included here so fuse_core.c can call fuse_hal_log_register_natives().
+ * --------------------------------------------------------------------------- */
+#include "log/fuse_hal_log.h"
 
 /* ---------------------------------------------------------------------------
  * Internal log helper (defined in fuse_log.c)
@@ -97,7 +103,7 @@ void fuse_log_write(fuse_log_ctx_t *ctx, fuse_module_id_t id,
                     uint32_t level, const char *msg);
 
 /* ---------------------------------------------------------------------------
- * Internal policy helper (defined in fuse_policy.c)
+ * Internal policy helpers (defined in fuse_policy.c)
  * --------------------------------------------------------------------------- */
 
 /**
@@ -106,24 +112,19 @@ void fuse_log_write(fuse_log_ctx_t *ctx, fuse_module_id_t id,
  */
 bool fuse_policy_check_cap(const fuse_policy_t *policy, uint32_t cap_bit);
 
-/* ---------------------------------------------------------------------------
- * Internal helper: find descriptor by module instance pointer.
- * Defined in fuse_module.c; used by fuse_hal.c.
- * --------------------------------------------------------------------------- */
-fuse_module_desc_t *fuse_module_find_by_inst(wasm_module_inst_t inst);
+/**
+ * Log a FATAL security event, set a WASM exception, and transition the
+ * module to TRAPPED state.  Shared by all HAL group bridge implementations.
+ */
+void fuse_policy_violation(fuse_module_desc_t *desc,
+                           wasm_module_inst_t inst,
+                           const char *cap_name);
 
 /* ---------------------------------------------------------------------------
- * Native-function bridge prototypes (defined in fuse_hal.c).
- * These are referenced by the NativeSymbol table in fuse_core.c.
- * They are NOT part of the public API; visibility is limited to core translation units.
+ * Internal helper: find descriptor by module instance pointer.
+ * Defined in fuse_module.c; used by HAL group bridge files.
  * --------------------------------------------------------------------------- */
-float    fuse_native_temp_get_reading(wasm_exec_env_t exec_env);
-uint64_t fuse_native_timer_get_timestamp(wasm_exec_env_t exec_env);
-uint64_t fuse_native_camera_last_frame(wasm_exec_env_t exec_env,
-                                       void *buf, uint32_t max_len);
-void     fuse_native_module_log_event(wasm_exec_env_t exec_env,
-                                      const char *ptr, uint32_t len,
-                                      uint32_t level);
+fuse_module_desc_t *fuse_module_find_by_inst(wasm_module_inst_t inst);
 
 #ifdef __cplusplus
 }

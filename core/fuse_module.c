@@ -320,7 +320,12 @@ fuse_stat_t fuse_module_unload(fuse_module_id_t id)
 
     /* Call module_deinit() if applicable.
      * Skip when the WAMR instance has already been terminated (TRAPPED or
-     * QUOTA_EXCEEDED): re-entering a terminated instance is undefined. */
+     * QUOTA_EXCEEDED): re-entering a terminated instance is undefined.
+     * NOTE: g_ctx.running == false (after fuse_stop()) does NOT prevent this
+     * call — fuse_stop() only sets FUSE's scheduling flag and transitions
+     * modules to PAUSED; WAMR's exec_env remains valid and callable for
+     * lifecycle operations like deinit.  The PAUSED state is intentionally
+     * included in the set of states for which deinit should run. */
     if ((desc->fn_deinit != NULL) && desc->init_called &&
         (desc->state != FUSE_MODULE_STATE_TRAPPED) &&
         (desc->state != FUSE_MODULE_STATE_QUOTA_EXCEEDED)) {
@@ -386,11 +391,17 @@ fuse_stat_t fuse_module_run_step(fuse_module_id_t id)
 
     /* -- Check step interval -------------------------------------------- */
     step_start_us = 0u;
-    if (g_ctx.hal.timer_get_timestamp != NULL) {
-        step_start_us = g_ctx.hal.timer_get_timestamp();
+#ifdef FUSE_HAL_ENABLE_TIMER
+    if (g_ctx.hal.timer.get_timestamp != NULL) {
+        step_start_us = g_ctx.hal.timer.get_timestamp();
     }
+#endif
     if ((desc->policy.step_interval_us > 0u) && desc->step_ever_run &&
-        (g_ctx.hal.timer_get_timestamp != NULL)) {
+#ifdef FUSE_HAL_ENABLE_TIMER
+        (g_ctx.hal.timer.get_timestamp != NULL)) {
+#else
+        false) {
+#endif
         /* Guard against unsigned underflow when the clock is reset or the
          * HAL is swapped (step_start_us < last_step_at_us).  In that case
          * we skip enforcement rather than wrapping to a huge elapsed value

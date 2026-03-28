@@ -34,11 +34,11 @@ static uint64_t stub_timer(void)           { return 0u; }
 static uint64_t stub_camera(void *, uint32_t) { return 0u; }
 
 static const fuse_hal_t kTestHal = {
-    stub_temp,
-    stub_timer,
-    stub_camera,
-    nullptr,   /* quota_arm   */
-    nullptr    /* quota_cancel */
+    { stub_temp   },   /* temp   group */
+    { stub_timer  },   /* timer  group */
+    { stub_camera },   /* camera group */
+    nullptr,           /* quota_arm    */
+    nullptr            /* quota_cancel */
 };
 
 /* -------------------------------------------------------------------------
