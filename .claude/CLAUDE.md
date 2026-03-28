@@ -42,6 +42,7 @@ A WAMR(wasm-micro-runtime) based, highly secure and flexible edge runtime librar
 - `./tests`: contains all test cases
 - `./demos/`: contains demo applications (host calls + wasm modules for specific applications)
 - `./cmake/`: contains all .cmake files
+- `./tools/`: contains scripts that @scripter may use and keep
 - `./wasm-micro-runtime/`: submodule that links to WAMR git repo, as project backbone
 - `./CMakeLists.txt`: main cmake build entry
 - `./build.py`: main build command entry to initiate compile and testings
