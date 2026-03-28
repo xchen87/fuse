@@ -1,8 +1,9 @@
 /*
  * main.c — Camera compression demo host application
  *
- * Loads the camera_compress WASM/AOT module under FUSE, then calls
- * fuse_module_run_step() every 10 seconds for 5 iterations.
+ * Loads the camera_compress WASM/AOT module under FUSE, then drives execution
+ * via fuse_tick() polled every 100 ms.  The module policy sets a 10 s step
+ * interval, so one step fires roughly every 10 s for NUM_STEPS total steps.
  * Each step is limited to 1 ms of wall-clock CPU time via a SIGALRM quota.
  *
  * Usage:
@@ -178,7 +179,6 @@ static const char *fuse_stat_name(fuse_stat_t s)
  * --------------------------------------------------------------------------- */
 
 #define NUM_STEPS   5
-#define STEP_PERIOD 10  /* seconds between steps */
 
 int main(int argc, char *argv[])
 {
@@ -186,7 +186,7 @@ int main(int argc, char *argv[])
         fprintf(stderr,
                 "usage: %s <module.aot> <policy.bin>\n"
                 "  module.aot  — AOT-compiled WASM module\n"
-                "  policy.bin  — binary fuse_policy_t (20 bytes)\n",
+                "  policy.bin  — binary fuse_policy_t (24 bytes)\n",
                 argv[0]);
         return 1;
     }
@@ -264,33 +264,36 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    printf("  module id: %u  — running %d steps every %d s\n\n",
-           mid, NUM_STEPS, STEP_PERIOD);
+    printf("  module id: %u  — running %d steps\n", mid, NUM_STEPS);
+    printf("  polling with fuse_tick() every 100 ms (step interval: 10 s)\n\n");
 
-    /* --- Periodic step loop --- */
+    /* --- fuse_tick() poll loop --- */
     int ok_count    = 0;
     int quota_count = 0;
     int trap_count  = 0;
 
-    for (int i = 0; i < NUM_STEPS; ++i) {
-        printf("[step %d/%d] waiting %d s ...\n", i + 1, NUM_STEPS,
-               STEP_PERIOD);
-        fflush(stdout);
-        sleep(STEP_PERIOD);
+    while (ok_count < NUM_STEPS) {
+        usleep(100000);  /* 100 ms poll interval */
 
-        rc = fuse_module_run_step(mid);
-        printf("[step %d/%d] result: %s\n", i + 1, NUM_STEPS,
-               fuse_stat_name(rc));
-        fflush(stdout);
+        uint32_t ran = fuse_tick();
 
-        switch (rc) {
-            case FUSE_SUCCESS:            ++ok_count;    break;
-            case FUSE_ERR_QUOTA_EXCEEDED: ++quota_count; break;
-            default:                       ++trap_count;  break;
+        if (ran & ((uint32_t)1u << mid)) {
+            ++ok_count;
+            printf("[step %d/%d] completed\n", ok_count, NUM_STEPS);
+            fflush(stdout);
         }
 
-        if (rc != FUSE_SUCCESS) {
-            printf("  module is no longer runnable — stopping early.\n");
+        /* Check if module entered a terminal state */
+        fuse_module_state_t st;
+        fuse_module_stat(mid, &st);
+        if (st == FUSE_MODULE_STATE_QUOTA_EXCEEDED) {
+            ++quota_count;
+            printf("  module quota exceeded — stopping.\n");
+            break;
+        }
+        if (st == FUSE_MODULE_STATE_TRAPPED) {
+            ++trap_count;
+            printf("  module trapped — stopping.\n");
             break;
         }
     }

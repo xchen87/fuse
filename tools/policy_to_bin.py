@@ -3,12 +3,13 @@
 policy_to_bin.py - Convert a FUSE policy JSON file to a binary file matching
 the fuse_policy_t C struct layout.
 
-fuse_policy_t layout (20 bytes, all little-endian uint32_t):
+fuse_policy_t layout (24 bytes, all little-endian uint32_t):
     uint32_t capabilities;      offset  0
     uint32_t memory_pages_max;  offset  4
     uint32_t stack_size;        offset  8
     uint32_t heap_size;         offset 12
     uint32_t cpu_quota_us;      offset 16
+    uint32_t step_interval_us;  offset 20
 
 Usage:
     python3 policy_to_bin.py --input <json_file> --output <bin_file>
@@ -26,10 +27,11 @@ POLICY_FIELDS = [
     "stack_size",
     "heap_size",
     "cpu_quota_us",
+    "step_interval_us",
 ]
 
-PACK_FORMAT = "<5I"
-EXPECTED_SIZE = 20
+PACK_FORMAT = "<6I"
+EXPECTED_SIZE = 24
 
 
 def parse_args():

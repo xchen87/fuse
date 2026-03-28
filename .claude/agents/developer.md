@@ -29,6 +29,8 @@ typedef struct {
     wasm_function_inst_t  fn_init;    /* NULL if not exported */
     wasm_function_inst_t  fn_deinit;  /* NULL if not exported */
     bool                  init_called;
+    bool                  step_ever_run;   /* true after first successful step; avoids 0-sentinel collision */
+    uint64_t              last_step_at_us; /* step_start_us of last successful step */
 } fuse_module_desc_t;
 
 /* Global singleton — check g_ctx.initialized before any WAMR call */

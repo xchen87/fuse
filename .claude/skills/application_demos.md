@@ -62,6 +62,21 @@ target_link_libraries(my_host PRIVATE fuse)
 target_include_directories(my_host PRIVATE "${CMAKE_SOURCE_DIR}/include")
 ```
 
+**Policy JSON template** (all fields required by `tools/policy_to_bin.py`, outputs 24-byte binary):
+```json
+{
+    "capabilities": 14,
+    "memory_pages_max": 62,
+    "stack_size": 8192,
+    "heap_size": 262144,
+    "cpu_quota_us": 1000,
+    "step_interval_us": 10000000
+}
+```
+- `capabilities`: OR of `FUSE_CAP_CAMERA=0x04`, `FUSE_CAP_LOG=0x08`, `FUSE_CAP_TIMER=0x02`, `FUSE_CAP_TEMP_SENSOR=0x01`
+- `step_interval_us=0` disables interval enforcement (host drives timing manually)
+- `cpu_quota_us=0` disables the 1ms wall-clock quota
+
 **Memory constraint** (4MB combined = `memory_pages_max=62` + `heap_size=262144`):
 - 62 × 65536 + 262144 = 4,194,304 bytes exactly
 - Static buffers in module C code count against linear memory (62 pages = 3,932,160 bytes available)

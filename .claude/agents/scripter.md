@@ -25,7 +25,8 @@ Converts a FUSE module policy JSON file to a packed binary matching the `fuse_po
 - `stack_size` — execution stack bytes
 - `heap_size` — heap bytes
 - `cpu_quota_us` — max step wall-clock time in microseconds (0 = unlimited)
+- `step_interval_us` — minimum microseconds between steps (0 = no constraint)
 
-**Output:** 20-byte little-endian binary (`struct.pack('<5I', ...)`) matching `fuse_policy_t`.
+**Output:** 24-byte little-endian binary (`struct.pack('<6I', ...)`) matching `fuse_policy_t`.
 
 **Used by:** `demos/camera_compress/CMakeLists.txt` as a CMake `add_custom_command` build step.

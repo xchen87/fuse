@@ -35,6 +35,11 @@ fuse_hal_t MakeHalNull();       // all callbacks NULL
 gMock usage: `EXPECT_CALL(mock_hal, CameraLastFrame(_, _)).WillOnce(Return(262144));`
 Static thunk pattern already handled inside `MockHal` — do not re-implement.
 
+**`MakePolicy` convenience helper** (all params after `caps` have defaults of 0/sensible values):
+```cpp
+fuse_policy_t p = MakePolicy(caps, pages=1, stack=8192, heap=8192, quota=0, interval=0);
+```
+
 **`AotBinary` RAII helper**:
 ```cpp
 AotBinary bin(FUSE_AOT_DIR "/mod_name.aot");

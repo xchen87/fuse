@@ -233,16 +233,18 @@ protected:
  * Convenience: default policy granting all capabilities.
  * ---------------------------------------------------------------------- */
 static inline fuse_policy_t MakePolicy(uint32_t caps,
-                                       uint32_t pages   = 1u,
-                                       uint32_t stack   = 8192u,
-                                       uint32_t heap    = 8192u,
-                                       uint32_t quota   = 0u) {
+                                       uint32_t pages    = 1u,
+                                       uint32_t stack    = 8192u,
+                                       uint32_t heap     = 8192u,
+                                       uint32_t quota    = 0u,
+                                       uint32_t interval = 0u) {
     fuse_policy_t p{};
-    p.capabilities     = caps;
-    p.memory_pages_max = pages;
-    p.stack_size       = stack;
-    p.heap_size        = heap;
-    p.cpu_quota_us     = quota;
+    p.capabilities      = caps;
+    p.memory_pages_max  = pages;
+    p.stack_size        = stack;
+    p.heap_size         = heap;
+    p.cpu_quota_us      = quota;
+    p.step_interval_us  = interval;
     return p;
 }
 

@@ -92,3 +92,17 @@ void fuse_quota_expired(fuse_module_id_t id);
 ```
 - Called from the quota timer ISR when a step exceeds its wall-clock budget.
 - ISR-safe: only calls `wasm_runtime_terminate()` + atomic fence. Sets module → QUOTA_EXCEEDED.
+
+### `fuse_tick`
+```c
+uint32_t fuse_tick(void);
+```
+- Iterates all RUNNING module slots and calls `fuse_module_run_step()` on each.
+- Modules that return `FUSE_ERR_INTERVAL_NOT_ELAPSED` are silently skipped (not yet due).
+- Modules that trap or exceed quota have their state updated as normal; iteration continues.
+- Returns a bitmask of module IDs that completed a step with `FUSE_SUCCESS` this tick (bit N = module id N ran). Returns 0 if not initialized, runtime stopped, or no modules were due.
+- Typical usage (bare-metal superloop or single RTOS scheduler task):
+  ```c
+  while (1) { usleep(1000); fuse_tick(); }
+  ```
+- Returns: `uint32_t` bitmask (valid for module IDs 0–31; `FUSE_MAX_MODULES` ≤ 32 enforced by `_Static_assert`)

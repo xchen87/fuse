@@ -365,6 +365,7 @@ fuse_stat_t fuse_module_run_step(fuse_module_id_t id)
     bool                call_ok;
     const char         *exc;
     char                log_msg[FUSE_LOG_MSG_MAX];
+    uint64_t            step_start_us;
 
     if (!g_ctx.initialized) {
         return FUSE_ERR_NOT_INITIALIZED;
@@ -383,6 +384,24 @@ fuse_stat_t fuse_module_run_step(fuse_module_id_t id)
         return FUSE_ERR_INVALID_ARG;
     }
 
+    /* -- Check step interval -------------------------------------------- */
+    step_start_us = 0u;
+    if (g_ctx.hal.timer_get_timestamp != NULL) {
+        step_start_us = g_ctx.hal.timer_get_timestamp();
+    }
+    if ((desc->policy.step_interval_us > 0u) && desc->step_ever_run &&
+        (g_ctx.hal.timer_get_timestamp != NULL)) {
+        /* Guard against unsigned underflow when the clock is reset or the
+         * HAL is swapped (step_start_us < last_step_at_us).  In that case
+         * we skip enforcement rather than wrapping to a huge elapsed value
+         * that would spuriously bypass the rate limit. */
+        if ((step_start_us >= desc->last_step_at_us) &&
+            ((step_start_us - desc->last_step_at_us) <
+             (uint64_t)desc->policy.step_interval_us)) {
+            return FUSE_ERR_INTERVAL_NOT_ELAPSED;
+        }
+    }
+
     /* -- Arm quota timer if configured ------------------------------------ */
     if ((desc->policy.cpu_quota_us > 0u) &&
         (g_ctx.hal.quota_arm != NULL)) {
@@ -397,6 +416,11 @@ fuse_stat_t fuse_module_run_step(fuse_module_id_t id)
         (g_ctx.hal.quota_cancel != NULL)) {
         g_ctx.hal.quota_cancel(id);
     }
+
+    /* Fence ensures the ISR's state write (QUOTA_EXCEEDED) is visible before
+     * we read desc->state below, preventing reordering on weakly-ordered
+     * architectures where the signal handler and main thread may share a core. */
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
 
     /* -- Handle failure --------------------------------------------------- */
     if (!call_ok) {
@@ -420,5 +444,47 @@ fuse_stat_t fuse_module_run_step(fuse_module_id_t id)
         return FUSE_ERR_MODULE_TRAP;
     }
 
+    /* -- Record successful step start time -------------------------------- */
+    desc->last_step_at_us = step_start_us;
+    desc->step_ever_run   = true;
     return FUSE_SUCCESS;
+}
+
+/* ---------------------------------------------------------------------------
+ * fuse_tick
+ * --------------------------------------------------------------------------- */
+uint32_t fuse_tick(void)
+{
+    uint32_t            i;
+    uint32_t            ran_mask = 0u;
+    fuse_module_desc_t *desc;
+    fuse_stat_t         rc;
+
+    /* Compile-time guard: the bitmask return type must be wide enough for all
+     * module IDs.  Raise this if FUSE_MAX_MODULES is ever increased past 32. */
+    _Static_assert(FUSE_MAX_MODULES <= 32u,
+                   "fuse_tick bitmask (uint32_t) too narrow for FUSE_MAX_MODULES");
+
+    if (!g_ctx.initialized || !g_ctx.running) {
+        return 0u;
+    }
+
+    for (i = 0u; i < FUSE_MAX_MODULES; ++i) {
+        desc = &g_ctx.modules[i];
+
+        if (!desc->in_use ||
+            (desc->state != FUSE_MODULE_STATE_RUNNING)) {
+            continue;
+        }
+
+        rc = fuse_module_run_step(desc->id);
+        if (rc == FUSE_SUCCESS) {
+            ran_mask |= ((uint32_t)1u << desc->id);
+        }
+        /* FUSE_ERR_INTERVAL_NOT_ELAPSED: not yet due — expected, continue */
+        /* FUSE_ERR_QUOTA_EXCEEDED / FUSE_ERR_MODULE_TRAP: state already
+         * updated; continue to next module */
+    }
+
+    return ran_mask;
 }

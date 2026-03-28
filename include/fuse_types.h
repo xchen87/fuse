@@ -34,8 +34,9 @@ typedef enum {
     FUSE_ERR_MODULE_LIMIT      = 6,
     FUSE_ERR_POLICY_VIOLATION  = 7,
     FUSE_ERR_BUFFER_TOO_SMALL  = 8,
-    FUSE_ERR_QUOTA_EXCEEDED    = 9,
-    FUSE_ERR_MODULE_TRAP       = 10
+    FUSE_ERR_QUOTA_EXCEEDED         = 9,
+    FUSE_ERR_MODULE_TRAP            = 10,
+    FUSE_ERR_INTERVAL_NOT_ELAPSED   = 11
 } fuse_stat_t;
 
 /* ---------------------------------------------------------------------------
@@ -67,6 +68,8 @@ typedef enum {
  * heap_size        : module heap size in bytes
  * cpu_quota_us     : maximum single-step wall-clock time in microseconds
  *                    (0 = unlimited)
+ * step_interval_us : minimum microseconds between consecutive steps
+ *                    (0 = no constraint)
  * --------------------------------------------------------------------------- */
 typedef struct {
     uint32_t capabilities;
@@ -74,6 +77,7 @@ typedef struct {
     uint32_t stack_size;
     uint32_t heap_size;
     uint32_t cpu_quota_us;
+    uint32_t step_interval_us;  /* min µs between steps; 0 = no constraint */
 } fuse_policy_t;
 
 /* ---------------------------------------------------------------------------

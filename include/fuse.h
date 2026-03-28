@@ -175,10 +175,14 @@ fuse_stat_t fuse_module_unload(fuse_module_id_t id);
  * If the quota fires before the step returns, fuse_quota_expired() terminates
  * the module instance and this function returns FUSE_ERR_QUOTA_EXCEEDED.
  *
+ * Returns FUSE_ERR_INTERVAL_NOT_ELAPSED if policy.step_interval_us > 0 and
+ * the minimum interval since the last successful step has not yet elapsed.
+ *
  * The module must be in RUNNING state.
  *
  * @return FUSE_SUCCESS, FUSE_ERR_INVALID_ARG, FUSE_ERR_NOT_INITIALIZED,
- *         FUSE_ERR_QUOTA_EXCEEDED, or FUSE_ERR_MODULE_TRAP.
+ *         FUSE_ERR_QUOTA_EXCEEDED, FUSE_ERR_MODULE_TRAP, or
+ *         FUSE_ERR_INTERVAL_NOT_ELAPSED.
  */
 fuse_stat_t fuse_module_run_step(fuse_module_id_t id);
 
@@ -191,6 +195,23 @@ fuse_stat_t fuse_module_run_step(fuse_module_id_t id);
  * returns false.
  */
 void fuse_quota_expired(fuse_module_id_t module_id);
+
+/**
+ * fuse_tick — Run all RUNNING modules whose step interval has elapsed.
+ *
+ * Iterate every RUNNING module slot. For each module, call
+ * fuse_module_run_step(). Modules that return FUSE_ERR_INTERVAL_NOT_ELAPSED
+ * are silently skipped (not yet due). Modules that trap or exceed quota have
+ * their state updated as usual and are also skipped for this tick.
+ *
+ * Returns a bitmask of module IDs that completed a step with FUSE_SUCCESS
+ * this tick (bit N = module with id N ran). Returns 0 if not initialized,
+ * runtime is stopped, or no modules were due.
+ *
+ * Typical host usage (bare-metal superloop or single RTOS task):
+ *   while (1) { usleep(1000); fuse_tick(); }
+ */
+uint32_t fuse_tick(void);
 
 #ifdef __cplusplus
 }

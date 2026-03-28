@@ -120,16 +120,17 @@ Every FUSE *Module* **must** provide a policy written in json for review before 
 *(Defined in `include/fuse_types.h` and `include/fuse.h` — no need to re-read those files)*
 
 **`fuse_stat_t`** (return value of all public APIs):
-`SUCCESS=0` `ERR_INVALID_ARG=1` `ERR_NOT_INITIALIZED=2` `ERR_ALREADY_INITIALIZED=3` `ERR_MODULE_LOAD_FAILED=4` `ERR_MODULE_NOT_FOUND=5` `ERR_MODULE_LIMIT=6` `ERR_POLICY_VIOLATION=7` `ERR_BUFFER_TOO_SMALL=8` `ERR_QUOTA_EXCEEDED=9` `ERR_MODULE_TRAP=10`
+`SUCCESS=0` `ERR_INVALID_ARG=1` `ERR_NOT_INITIALIZED=2` `ERR_ALREADY_INITIALIZED=3` `ERR_MODULE_LOAD_FAILED=4` `ERR_MODULE_NOT_FOUND=5` `ERR_MODULE_LIMIT=6` `ERR_POLICY_VIOLATION=7` `ERR_BUFFER_TOO_SMALL=8` `ERR_QUOTA_EXCEEDED=9` `ERR_MODULE_TRAP=10` `ERR_INTERVAL_NOT_ELAPSED=11`
 
 **`fuse_module_state_t`**: `LOADED=0` `RUNNING=1` `PAUSED=2` `TRAPPED=3` `QUOTA_EXCEEDED=4` `UNLOADED=5`
 
 **Capability bits**: `FUSE_CAP_TEMP_SENSOR=0x01` `FUSE_CAP_TIMER=0x02` `FUSE_CAP_CAMERA=0x04` `FUSE_CAP_LOG=0x08`
 
-**`fuse_policy_t`** — 5 × uint32_t (20 bytes, little-endian binary layout used by `tools/policy_to_bin.py`):
+**`fuse_policy_t`** — 6 × uint32_t (24 bytes, little-endian binary layout used by `tools/policy_to_bin.py`):
 ```c
 typedef struct { uint32_t capabilities; uint32_t memory_pages_max;
-                 uint32_t stack_size; uint32_t heap_size; uint32_t cpu_quota_us; } fuse_policy_t;
+                 uint32_t stack_size; uint32_t heap_size; uint32_t cpu_quota_us;
+                 uint32_t step_interval_us; /* min µs between steps; 0=no constraint */ } fuse_policy_t;
 ```
 **Constants**: `FUSE_INVALID_MODULE_ID=UINT32_MAX` `FUSE_MAX_MODULES=8` `FUSE_LOG_MSG_MAX=128`
 
@@ -156,6 +157,7 @@ fuse_stat_t fuse_module_stat(fuse_module_id_t id, fuse_module_state_t *out_state
 fuse_stat_t fuse_module_unload(fuse_module_id_t id);
 fuse_stat_t fuse_module_run_step(fuse_module_id_t id);
 void        fuse_quota_expired(fuse_module_id_t id);  /* ISR-safe */
+uint32_t    fuse_tick(void);  /* run all due RUNNING modules; returns bitmask of IDs stepped */
 ```
 
 ## Key WAMR/AOT Constraints (Lessons Learned)

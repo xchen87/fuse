@@ -151,7 +151,7 @@ TEST_F(FuseTest, LoadNullBuf) {
     ASSERT_EQ(fuse_init(g_module_mem, kModuleMemSize,
                         g_log_mem, kLogMemSize, &kTestHal), FUSE_SUCCESS);
 
-    fuse_policy_t   policy = {FUSE_CAP_LOG, 1u, 4096u, 4096u, 0u};
+    fuse_policy_t   policy = {FUSE_CAP_LOG, 1u, 4096u, 4096u, 0u, 0u};
     fuse_module_id_t id    = FUSE_INVALID_MODULE_ID;
 
     fuse_stat_t s = fuse_module_load(nullptr, 64u, &policy, &id);
@@ -179,7 +179,7 @@ TEST_F(FuseTest, LoadNullOutId) {
                         g_log_mem, kLogMemSize, &kTestHal), FUSE_SUCCESS);
 
     static const uint8_t kDummyBuf[4] = {0};
-    fuse_policy_t policy = {FUSE_CAP_LOG, 1u, 4096u, 4096u, 0u};
+    fuse_policy_t policy = {FUSE_CAP_LOG, 1u, 4096u, 4096u, 0u, 0u};
 
     fuse_stat_t s = fuse_module_load(kDummyBuf, sizeof(kDummyBuf),
                                      &policy, nullptr);
@@ -194,7 +194,7 @@ TEST_F(FuseTest, LoadInvalidBinaryFails) {
 
     /* A four-byte invalid "binary" should fail WAMR load. */
     static const uint8_t kBadBuf[4] = {0xDE, 0xAD, 0xBE, 0xEF};
-    fuse_policy_t    policy = {FUSE_CAP_LOG, 1u, 4096u, 4096u, 0u};
+    fuse_policy_t    policy = {FUSE_CAP_LOG, 1u, 4096u, 4096u, 0u, 0u};
     fuse_module_id_t id     = FUSE_INVALID_MODULE_ID;
 
     fuse_stat_t s = fuse_module_load(kBadBuf, sizeof(kBadBuf), &policy, &id);

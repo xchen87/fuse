@@ -3,5 +3,6 @@
     "memory_pages_max": 62,
     "stack_size": 8192,
     "heap_size": 262144,
-    "cpu_quota_us": 1000
+    "cpu_quota_us": 1000,
+    "step_interval_us": 10000000
 }
