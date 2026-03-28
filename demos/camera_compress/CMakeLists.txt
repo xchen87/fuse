@@ -52,12 +52,12 @@ set(POLICY_BIN "${DEMO_OUT_DIR}/camera_compress_policy.bin")
 add_custom_command(
     OUTPUT  "${POLICY_BIN}"
     COMMAND "${Python3_EXECUTABLE}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/policy_to_bin.py"
+            "${CMAKE_SOURCE_DIR}/tools/policy_to_bin.py"
             --input  "${CMAKE_CURRENT_SOURCE_DIR}/policy/camera_compress_policy.json"
             --output "${POLICY_BIN}"
     DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/policy/camera_compress_policy.json"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/policy_to_bin.py"
+        "${CMAKE_SOURCE_DIR}/tools/policy_to_bin.py"
     COMMENT "[demo:camera_compress] policy JSON → binary"
 )
 add_custom_target(camera_compress_policy ALL DEPENDS "${POLICY_BIN}")
