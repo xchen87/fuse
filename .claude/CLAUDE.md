@@ -32,13 +32,15 @@ A WAMR(wasm-micro-runtime) based, highly secure and flexible edge runtime librar
 - Use `@developer` for all C code implementation.
 - Use `@sentinel` for all mandatory security audits of all C code.
 - Use `@validator` to generate test cases for all C coding blocks.
-- Follow the workflow defined in `@feature_addition.md` for how and when each agent should act when adding new code.
+- Use `@scripter` to generate any helper scripts, such as policy json to binary convertion.
+- Follow the workflow defined in `@feature_addition.md` for how and when each agent should act when adding new functions for *FUSE* library.
+- Follow the workflow defined in `@application_demo.md` for how and when each agent should act when adding new application demos.
 
 ## Project Structure
 - `./core`: contains all .c source code for all core runtime functions and WAMR bridges
 - `./include`: contains .h header files & api definitions
 - `./tests`: contains all test cases
-- `./modules/`: contains all example module applications source code
+- `./demos/`: contains demo applications (host calls + wasm modules for specific applications)
 - `./cmake/`: contains all .cmake files
 - `./wasm-micro-runtime/`: submodule that links to WAMR git repo, as project backbone
 - `./CMakeLists.txt`: main cmake build entry
@@ -46,6 +48,7 @@ A WAMR(wasm-micro-runtime) based, highly secure and flexible edge runtime librar
 
 ## Standard Operating Procedures
 - **Adding new features or implemeting APIs**: Follow the `@feature_addition.md` for the workflow
+- **Adding new application demos**: Follow the `@application_demo.md` for the workflow
 - **Memory Policy**: No dynamic allocation
 - **Audit Requirement**: All code must receive a PASS from `@sentinel`
 
@@ -94,6 +97,10 @@ void module_step(void) { /* one unit of work — no infinite loops */ }
 ```
 Optional exports: `module_init()` (called once on first start), `module_deinit()` (called on unload).
 `fuse_module_load()` will fail if `module_step` is not exported.
+
+## Reviewable Module Policy
+Every FUSE *Module* **must** provide a policy written in json for review before deployment.
+
 
 ## Key WAMR/AOT Constraints (Lessons Learned)
 - **No instruction metering in AOT mode.** `wasm_runtime_set_instruction_count_limit()` only works in interpreter mode. CPU quota in FUSE is time-based (host timer → `fuse_quota_expired()`).
