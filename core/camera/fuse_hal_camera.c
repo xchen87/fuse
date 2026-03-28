@@ -50,6 +50,8 @@ static uint32_t fuse_native_camera_last_frame(wasm_exec_env_t exec_env,
 
     /* Reject null or zero-length buffers before any memory validation. */
     if ((buf == NULL) || (max_len == 0u)) {
+        fuse_log_write(&g_ctx.log_ctx, desc->id, 2u,
+                       "SECURITY: camera null or zero-length buffer");
         wasm_runtime_set_exception(inst,
                                    "FUSE camera: null or zero-length buffer");
         desc->state = FUSE_MODULE_STATE_TRAPPED;

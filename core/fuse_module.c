@@ -354,9 +354,8 @@ fuse_stat_t fuse_module_unload(fuse_module_id_t id)
                    "module %u unloaded", (unsigned int)id);
     fuse_log_write(&g_ctx.log_ctx, id, 1u, log_msg);
 
-    /* Zero the whole descriptor and mark it free. */
+    /* Zero the whole descriptor (sets in_use to false, all pointers to NULL). */
     (void)memset(desc, 0, sizeof(*desc));
-    desc->in_use = false;
 
     return FUSE_SUCCESS;
 }
