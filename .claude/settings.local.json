@@ -14,7 +14,12 @@
       "Bash(./build.py)",
       "Bash(./build.py -c -b Debug 2>&1)",
       "Bash(ctest --output-on-failure)",
-      "Bash(ls /home/xinchen/code/fuse/demos/*/)"
+      "Bash(ls /home/xinchen/code/fuse/demos/*/)",
+      "Bash(cmake --build build --config Release)",
+      "Bash(python3 /home/xinchen/code/fuse/tools/gen_app_config.py --input /home/xinchen/code/fuse/demos/camera_compress/app_config.json --output-dir /tmp/fuse_gen_test)",
+      "Read(//tmp/fuse_gen_test/**)",
+      "Bash(xxd /tmp/fuse_gen_test/camera_compress_policy.bin)",
+      "Bash(ctest)"
     ]
   }
 }
