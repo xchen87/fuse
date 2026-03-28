@@ -46,3 +46,4 @@ target_compile_options(fuse PRIVATE
 )
 
 add_subdirectory(tests)
+add_subdirectory(demos/camera_compress)
