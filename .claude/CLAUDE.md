@@ -103,6 +103,48 @@ Optional exports: `module_init()` (called once on first start), `module_deinit()
 Every FUSE *Module* **must** provide a policy written in json for review before deployment.
 
 
+## Key Types Quick Reference
+*(Defined in `include/fuse_types.h` and `include/fuse.h` — no need to re-read those files)*
+
+**`fuse_stat_t`** (return value of all public APIs):
+`SUCCESS=0` `ERR_INVALID_ARG=1` `ERR_NOT_INITIALIZED=2` `ERR_ALREADY_INITIALIZED=3` `ERR_MODULE_LOAD_FAILED=4` `ERR_MODULE_NOT_FOUND=5` `ERR_MODULE_LIMIT=6` `ERR_POLICY_VIOLATION=7` `ERR_BUFFER_TOO_SMALL=8` `ERR_QUOTA_EXCEEDED=9` `ERR_MODULE_TRAP=10`
+
+**`fuse_module_state_t`**: `LOADED=0` `RUNNING=1` `PAUSED=2` `TRAPPED=3` `QUOTA_EXCEEDED=4` `UNLOADED=5`
+
+**Capability bits**: `FUSE_CAP_TEMP_SENSOR=0x01` `FUSE_CAP_TIMER=0x02` `FUSE_CAP_CAMERA=0x04` `FUSE_CAP_LOG=0x08`
+
+**`fuse_policy_t`** — 5 × uint32_t (20 bytes, little-endian binary layout used by `tools/policy_to_bin.py`):
+```c
+typedef struct { uint32_t capabilities; uint32_t memory_pages_max;
+                 uint32_t stack_size; uint32_t heap_size; uint32_t cpu_quota_us; } fuse_policy_t;
+```
+**Constants**: `FUSE_INVALID_MODULE_ID=UINT32_MAX` `FUSE_MAX_MODULES=8` `FUSE_LOG_MSG_MAX=128`
+
+**`fuse_hal_t`** — all fields may be NULL:
+```c
+typedef struct {
+    float     (*temp_get_reading)(void);
+    uint64_t  (*timer_get_timestamp)(void);
+    uint64_t  (*camera_last_frame)(void *buf, uint32_t max_len);
+    void      (*quota_arm)(fuse_module_id_t mid, uint32_t quota_us);
+    void      (*quota_cancel)(fuse_module_id_t mid);
+} fuse_hal_t;
+```
+
+**Complete `fuse.h` API signatures** (do not re-read fuse.h):
+```c
+fuse_stat_t fuse_init(void *mod_mem, size_t mod_mem_sz, void *log_mem, size_t log_mem_sz, const fuse_hal_t *hal);
+fuse_stat_t fuse_stop(void);
+fuse_stat_t fuse_restart(void);
+fuse_stat_t fuse_module_load(const uint8_t *buf, uint32_t size, const fuse_policy_t *policy, fuse_module_id_t *out_id);
+fuse_stat_t fuse_module_start(fuse_module_id_t id);
+fuse_stat_t fuse_module_pause(fuse_module_id_t id);
+fuse_stat_t fuse_module_stat(fuse_module_id_t id, fuse_module_state_t *out_state);
+fuse_stat_t fuse_module_unload(fuse_module_id_t id);
+fuse_stat_t fuse_module_run_step(fuse_module_id_t id);
+void        fuse_quota_expired(fuse_module_id_t id);  /* ISR-safe */
+```
+
 ## Key WAMR/AOT Constraints (Lessons Learned)
 - **No instruction metering in AOT mode.** `wasm_runtime_set_instruction_count_limit()` only works in interpreter mode. CPU quota in FUSE is time-based (host timer → `fuse_quota_expired()`).
 - **WAMR AOT memory includes heap.** A module with `memory_pages_max=1` and `heap_size=8192` has a combined allocation of `65536+8192=73728` bytes. `wasm_runtime_validate_native_addr` validates against this combined size, not just linear memory. OOB tests must use lengths that clearly exceed the combined allocation.

@@ -1,31 +1,54 @@
 # Module to FUSE API
-- **Constraint** All Module to FUSE API calls need be be checked against Module Policies
-- Module to FUSE Calls can categorized as either a HAL API that intents to access hardware resources, or a Log API to log module's critical event to FUSE security log.
+- **Constraint** All Module to FUSE API calls are checked against Module Policy before execution.
+- Module to FUSE calls are either HAL API (hardware access) or Log API (security log).
+
+## C Module Boilerplate
+*(freestanding — no libc, no WASI; compiled with `--target=wasm32-unknown-unknown -nostdlib`)*
+
+```c
+/* Declare each import with matching attributes: */
+__attribute__((import_module("env"), import_name("temp_get_reading")))
+extern float temp_get_reading(void);
+
+__attribute__((import_module("env"), import_name("timer_get_timestamp")))
+extern unsigned long long timer_get_timestamp(void);
+
+__attribute__((import_module("env"), import_name("camera_last_frame")))
+extern unsigned long long camera_last_frame(void *buf, unsigned int max_len);
+
+__attribute__((import_module("env"), import_name("module_log_event")))
+extern void module_log_event(const char *ptr, unsigned int len, unsigned int level);
+
+/* Required export: */
+__attribute__((export_name("module_step"))) void module_step(void) { /* no infinite loops */ }
+/* Optional exports: */
+__attribute__((export_name("module_init")))   void module_init(void)   { }
+__attribute__((export_name("module_deinit"))) void module_deinit(void) { }
+```
+Note: WASM linear memory is zero-initialised at startup — static/global arrays start zeroed.
+Use basic C integer arithmetic and array indexing freely. Do NOT call libc I/O (printf, fwrite, etc.).
 
 ## HAL API
 
 ### Temperature Sensor
-#### `float temp_get_reading()`
-- Description: Read and return current temperature reading from temp sensors on host
-- Return: float temperature reading
+#### `float temp_get_reading(void)`
+- Requires: `FUSE_CAP_TEMP_SENSOR` (0x01)
+- Returns: Celsius as float
 
 ### Timer
-#### `uint64 timer_get_timestamp()`
-- Description: Returns elapsed time in microseconds.
-- Return: uint64
+#### `uint64_t timer_get_timestamp(void)`
+- Requires: `FUSE_CAP_TIMER` (0x02)
+- Returns: elapsed microseconds (monotonic)
 
 ### Camera
-#### `uint64 camera_last_frame(buffer_ptr, max_len)`
-- Description: Get the latest camera frame data
-- Return: uint64 (actual bytes of the lastest frame buffer)
-- Parameters:
-    - buffer_ptr: destination in module memory
-    - max_len: buffer size to contain fame data
+#### `uint64_t camera_last_frame(void *buf, uint32_t max_len)`
+- Requires: `FUSE_CAP_CAMERA` (0x04)
+- Copies latest frame into `buf[0..max_len-1]` (within module linear memory)
+- Returns: actual bytes written; 0 if no frame available or buffer invalid
 
 ## Log API
-### `module_log_event(ptr, len, level)`
-- Description: sends a log record to the fuse security log
-- Parameters:
-    - ptr: source log buffer
-    - len: source log size
-    - level: (uint32, 0:DEBUG, 1:INFO, 2:FATAL)
+#### `void module_log_event(const char *ptr, uint32_t len, uint32_t level)`
+- Requires: `FUSE_CAP_LOG` (0x08)
+- `ptr`: source buffer in module linear memory; `len`: byte count (not NUL-terminated)
+- `level`: 0=DEBUG, 1=INFO, 2=FATAL
+- Messages longer than `FUSE_LOG_MSG_MAX` (128) are truncated

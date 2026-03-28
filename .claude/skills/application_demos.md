@@ -10,6 +10,62 @@ The user MUST provide a clear GOAL describing:
 - What the WASM module should do
 - What the host application should control or enforce
 
+### WASM Module Development Reference
+*(avoids re-reading toolchain docs and existing CMakeLists)*
+
+**Freestanding compilation** (no WASI imports — required because `WAMR_BUILD_LIBC_WASI=0`):
+```bash
+/opt/wasi-sdk/bin/clang \
+  --target=wasm32-unknown-unknown -nostdlib -O2 \
+  -Wl,--no-entry \
+  -Wl,--export=module_step,--export=module_init \
+  -Wl,--allow-undefined \
+  -o module.wasm module.c
+wamrc --target=x86_64 --target-abi=gnu -o module.aot module.wasm
+```
+
+**Module C source constraints** (no libc — no printf, sprintf, memset, memcpy):
+```c
+/* Declare imports: */
+__attribute__((import_module("env"), import_name("camera_last_frame")))
+extern uint64_t camera_last_frame(void *buf, unsigned int max_len);
+/* Other imports: timer_get_timestamp, module_log_event, temp_get_reading */
+
+/* Required export: */
+__attribute__((export_name("module_step"))) void module_step(void) { /* no infinite loops */ }
+/* Optional: module_init, module_deinit */
+```
+
+**CMake demo pattern** (subdirectory added via root `add_subdirectory(demos/<name>)`):
+```cmake
+find_program(WASI_CLANG clang HINTS /opt/wasi-sdk/bin NO_DEFAULT_PATH)
+find_program(WAMRC wamrc HINTS ${CMAKE_SOURCE_DIR}/wasm-micro-runtime/wamr-compiler/build /opt/wamrc /usr/local/bin)
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
+# Policy JSON → binary (always runs):
+add_custom_command(OUTPUT policy.bin
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/policy_to_bin.py"
+            --input policy.json --output policy.bin
+    DEPENDS policy.json "${CMAKE_SOURCE_DIR}/tools/policy_to_bin.py")
+add_custom_target(my_policy ALL DEPENDS policy.bin)
+
+# C → WASM → AOT (skipped gracefully if toolchain absent):
+if(WASI_CLANG AND WAMRC)
+    add_custom_command(OUTPUT module.wasm COMMAND ${WASI_CLANG} ... DEPENDS module.c)
+    add_custom_command(OUTPUT module.aot  COMMAND ${WAMRC} ...    DEPENDS module.wasm)
+    add_custom_target(my_aot ALL DEPENDS module.aot)
+endif()
+
+# Host executable uses parent project's 'fuse' target (no find_package needed):
+add_executable(my_host host/main.c)
+target_link_libraries(my_host PRIVATE fuse)
+target_include_directories(my_host PRIVATE "${CMAKE_SOURCE_DIR}/include")
+```
+
+**Memory constraint** (4MB combined = `memory_pages_max=62` + `heap_size=262144`):
+- 62 × 65536 + 262144 = 4,194,304 bytes exactly
+- Static buffers in module C code count against linear memory (62 pages = 3,932,160 bytes available)
+
 ### Instructions
 1. **Goal Clarification**: If the GOAL is missing or vague, ask the user to clarify before proceeding.
   - Do NOT generate code until a concrete GOAL is provided.

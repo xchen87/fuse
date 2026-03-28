@@ -13,6 +13,67 @@ You are an expert firmware engineer. You write MISRA-C compliant C99 code for fe
 - Ensure Module's execution does not exceed specified quota in policy.
 - Maintain a unified stat_enum to track status for all operations, start with 'SUCCESS' enum, add necessary error code definitions when needed.
 
+# Key Internal Types
+*(from `core/fuse_internal.h` — no need to re-read that file)*
+
+```c
+/* Per-module descriptor (g_ctx.modules[i]) */
+typedef struct {
+    fuse_module_id_t      id;
+    fuse_module_state_t   state;
+    fuse_policy_t         policy;
+    wasm_module_t         wasm_module;
+    wasm_module_inst_t    inst;
+    wasm_exec_env_t       exec_env;
+    wasm_function_inst_t  fn_step;    /* required */
+    wasm_function_inst_t  fn_init;    /* NULL if not exported */
+    wasm_function_inst_t  fn_deinit;  /* NULL if not exported */
+    bool                  init_called;
+} fuse_module_desc_t;
+
+/* Global singleton — check g_ctx.initialized before any WAMR call */
+typedef struct {
+    bool               initialized;
+    bool               running;
+    fuse_module_desc_t modules[FUSE_MAX_MODULES];
+    fuse_hal_t         hal;
+    fuse_log_ctx_t     log_ctx;
+    /* module memory pool and log memory pointers also stored here */
+} fuse_context_t;
+extern fuse_context_t g_ctx;
+```
+
+Helper: `fuse_module_desc_t *fuse_module_find_by_inst(wasm_module_inst_t inst)` — returns NULL if not found (rogue exec_env).
+
+# NativeSymbol Registration Pattern
+*(when adding a new HAL function — avoids re-reading `core/fuse_core.c` and `core/fuse_hal.c`)*
+
+**Step 1** — Add bridge function in `core/fuse_hal.c`:
+```c
+RetType fuse_native_my_func(wasm_exec_env_t exec_env /*, args...*/) {
+    wasm_module_inst_t inst = wasm_runtime_get_module_inst(exec_env);
+    fuse_module_desc_t *desc = fuse_module_find_by_inst(inst);
+    if (!fuse_policy_check_cap((desc ? &desc->policy : NULL), FUSE_CAP_MY_CAP)) {
+        policy_violation(desc, inst, "MY_CAP");
+        return 0;
+    }
+    /* For pointer args: validate before use */
+    if (!wasm_runtime_validate_native_addr(inst, buf, (uint64_t)len)) { /* trap */ }
+    return g_ctx.hal.my_func(/* args */);
+}
+```
+
+**Step 2** — Register in `k_native_symbols[]` in `core/fuse_core.c`:
+```c
+{ "my_func", fuse_native_my_func, "SIGNATURE", NULL }
+```
+WAMR signature strings: `"()f"` (→float) · `"()I"` (→uint64) · `"(*~)I"` (ptr+len→uint64) · `"(*~i)"` (ptr+len+i32→void)
+`*` = WAMR auto-converts wasm linear-memory offset to native ptr · `~` = paired uint32 length
+
+**Step 3** — Add callback typedef + field to `fuse_hal_t` in `include/fuse.h`.
+
+**Step 4** — Add `FUSE_CAP_MY_CAP` bit to `include/fuse_types.h`.
+
 # WAMR/AOT Critical Patterns
 - **Never call into a WAMR instance that is TRAPPED or QUOTA_EXCEEDED.** `wasm_runtime_call_wasm()` on a terminated instance is undefined behaviour. Guard all calls (including `module_deinit`) with a state check.
 - **ISR → main communication needs a memory barrier.** When `fuse_quota_expired()` writes a state flag from ISR context then calls `wasm_runtime_terminate()`, insert `__atomic_thread_fence(__ATOMIC_SEQ_CST)` between the write and the terminate call to prevent CPU/compiler reordering.

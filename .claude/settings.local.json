@@ -13,7 +13,8 @@
       "Bash(./tests/fuse_test --gtest_filter=\"HalBridgeTest.TempCallbackInvokedExactlyOnce\")",
       "Bash(./build.py)",
       "Bash(./build.py -c -b Debug 2>&1)",
-      "Bash(ctest --output-on-failure)"
+      "Bash(ctest --output-on-failure)",
+      "Bash(ls /home/xinchen/code/fuse/demos/*/)"
     ]
   }
 }
