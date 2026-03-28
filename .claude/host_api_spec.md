@@ -143,3 +143,31 @@ uint32_t fuse_tick(void);
   while (1) { usleep(1000); fuse_tick(); }
   ```
 - Returns: `uint32_t` bitmask (valid for module IDs 0–31; `FUSE_MAX_MODULES` ≤ 32 enforced by `_Static_assert`)
+
+### `fuse_policy_from_bin`
+```c
+fuse_stat_t fuse_policy_from_bin(const uint8_t *buf, uint32_t len,
+                                  fuse_policy_t *out_policy);
+```
+- Deserialises a 24-byte little-endian policy binary (`*_policy.bin`) into a `fuse_policy_t`.
+- Wire format: 6 × uint32_t little-endian, matching `fuse_policy_t` in-memory layout on all WAMR-supported little-endian targets.
+- Use this for **dynamic module loading** when policy is delivered at runtime rather than compiled in.
+- Returns: `FUSE_SUCCESS`, `FUSE_ERR_INVALID_ARG` (NULL pointer or `len != sizeof(fuse_policy_t)`)
+
+**Dynamic module loading pattern**:
+```c
+/* Read policy.bin delivered at runtime */
+uint8_t policy_buf[sizeof(fuse_policy_t)];
+/* ... fill policy_buf from file/uplink/OTA ... */
+fuse_policy_t policy;
+fuse_stat_t st = fuse_policy_from_bin(policy_buf, sizeof(policy_buf), &policy);
+if (st != FUSE_SUCCESS) { /* handle error */ }
+
+/* Load the module binary */
+fuse_module_id_t id;
+st = fuse_module_load(module_buf, module_size, &policy, &id);
+```
+
+**app_config.json dual-mode**: `tools/gen_app_config.py` supports two forms:
+- **With `modules` section**: generates both `fuse_app_config.h` (compile-time macros) and per-module `*_policy.bin` files — use `FUSE_POLICY_*` macros for static deployments.
+- **Without `modules` section** (platform-only config): generates only `fuse_app_config.h` with pool sizes and HAL flags — modules are loaded fully dynamically at runtime via `fuse_policy_from_bin()`.

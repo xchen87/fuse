@@ -58,8 +58,6 @@ def validate(config: dict, input_path: str) -> None:
 
     if "application" not in config:
         err("missing top-level 'application' key")
-    if "modules" not in config:
-        err("missing top-level 'modules' key")
 
     app = config["application"]
     for required in ("name", "max_modules", "wamr_pool_bytes", "log_pool_bytes", "hal_groups"):
@@ -81,7 +79,10 @@ def validate(config: dict, input_path: str) -> None:
     if not isinstance(max_modules, int) or max_modules < 1 or max_modules > FUSE_MAX_MODULES:
         err(f"application.max_modules must be 1..{FUSE_MAX_MODULES}, got {max_modules}")
 
-    # modules list
+    # modules list — optional; omit for pure dynamic deployments
+    if "modules" not in config:
+        return  # platform-only config is valid; no module entries to validate
+
     modules = config["modules"]
     if not isinstance(modules, list) or len(modules) == 0:
         err("modules must be a non-empty list")
@@ -141,7 +142,7 @@ def module_macro_prefix(name: str) -> str:
 
 def generate_header(config: dict, input_path: str) -> str:
     app = config["application"]
-    modules = config["modules"]
+    modules = config.get("modules", [])
     hal_groups = app["hal_groups"]
 
     lines = [
@@ -252,14 +253,15 @@ def main() -> None:
     cmake_path.write_text(generate_cmake_flags(config))
     print(f"Generated: {cmake_path}")
 
-    # 3. Per-module policy binaries
-    for mod in config["modules"]:
+    # 3. Per-module policy binaries (only when modules section is present)
+    modules = config.get("modules", [])
+    for mod in modules:
         bin_name = f"{mod['name']}_policy.bin"
         bin_path = output_dir / bin_name
         bin_path.write_bytes(generate_policy_bin(mod["policy"]))
         print(f"Generated: {bin_path}")
 
-    print(f"\nSuccess: {2 + len(config['modules'])} files written to {output_dir}")
+    print(f"\nSuccess: {2 + len(modules)} files written to {output_dir}")
 
 
 if __name__ == "__main__":

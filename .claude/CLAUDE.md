@@ -221,6 +221,7 @@ fuse_stat_t fuse_module_unload(fuse_module_id_t id);
 fuse_stat_t fuse_module_run_step(fuse_module_id_t id);
 void        fuse_quota_expired(fuse_module_id_t id);  /* ISR-safe */
 uint32_t    fuse_tick(void);  /* run all due RUNNING modules; returns bitmask of IDs stepped */
+fuse_stat_t fuse_policy_from_bin(const uint8_t *buf, uint32_t len, fuse_policy_t *out_policy);  /* deserialise 24-byte policy binary */
 ```
 
 ## Key WAMR/AOT Constraints (Lessons Learned)

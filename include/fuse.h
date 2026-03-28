@@ -241,6 +241,23 @@ void fuse_quota_expired(fuse_module_id_t module_id);
  */
 uint32_t fuse_tick(void);
 
+/**
+ * fuse_policy_from_bin — Deserialise a little-endian 24-byte policy binary
+ * into a fuse_policy_t.
+ *
+ * The wire format is 6 x uint32_t little-endian, as produced by
+ * tools/policy_to_bin.py and tools/gen_app_config.py.  Use this function
+ * when a module's policy arrives at runtime (e.g. uploaded over a link)
+ * rather than being compiled in via fuse_app_config.h macros.
+ *
+ * @param buf        Input buffer — must be at least sizeof(fuse_policy_t) bytes.
+ * @param len        Buffer length; must equal sizeof(fuse_policy_t) (24).
+ * @param out_policy Output policy struct (written on success only).
+ * @returns FUSE_SUCCESS, FUSE_ERR_INVALID_ARG
+ */
+fuse_stat_t fuse_policy_from_bin(const uint8_t *buf, uint32_t len,
+                                  fuse_policy_t *out_policy);
+
 #ifdef __cplusplus
 }
 #endif

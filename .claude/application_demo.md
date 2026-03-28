@@ -172,6 +172,68 @@ cd /path/to/fuse && ./build.py -c && cd build && ctest
 
 ---
 
+## Static vs Dynamic Module Loading
+
+FUSE supports two non-exclusive patterns for loading modules and their policies:
+
+### Static (compile-time) — `app_config.json` has a `modules` section
+
+`gen_app_config.py` generates both `fuse_app_config.h` (with `FUSE_POLICY_<NAME>_*` macros) and
+per-module `*_policy.bin` files. The host populates `fuse_policy_t` directly from macros:
+
+```c
+#if defined(__has_include) && __has_include("fuse_app_config.h")
+#  include "fuse_app_config.h"
+#endif
+
+fuse_policy_t policy = {
+    .capabilities     = FUSE_POLICY_MY_MODULE_CAPABILITIES,
+    .memory_pages_max = FUSE_POLICY_MY_MODULE_MEMORY_PAGES_MAX,
+    .stack_size       = FUSE_POLICY_MY_MODULE_STACK_SIZE,
+    .heap_size        = FUSE_POLICY_MY_MODULE_HEAP_SIZE,
+    .cpu_quota_us     = FUSE_POLICY_MY_MODULE_CPU_QUOTA_US,
+    .step_interval_us = FUSE_POLICY_MY_MODULE_STEP_INTERVAL_US,
+};
+```
+
+### Dynamic (runtime) — modules loaded after deployment
+
+The host reads a `*_policy.bin` (generated offline, delivered via uplink/OTA) and deserialises it
+with `fuse_policy_from_bin()`. The `app_config.json` may omit the `modules` section entirely:
+
+```c
+/* Read policy binary from file / uplink buffer */
+uint8_t policy_buf[24];  /* sizeof(fuse_policy_t) */
+/* ... fill policy_buf ... */
+
+fuse_policy_t policy;
+fuse_stat_t st = fuse_policy_from_bin(policy_buf, sizeof(policy_buf), &policy);
+if (st != FUSE_SUCCESS) { /* handle error */ }
+
+fuse_module_id_t id;
+st = fuse_module_load(module_buf, module_size, &policy, &id);
+```
+
+`gen_app_config.py` will still generate `fuse_app_config.h` with platform constants (HAL flags,
+pool sizes, `max_modules`) even when `modules` is absent — the host can use `FUSE_APP_WAMR_POOL_BYTES`
+etc. without needing compile-time module policies.
+
+### Dual-mode host (both paths)
+
+Use `__has_include("fuse_app_config.h")` to conditionally enable the static path:
+```c
+#if defined(__has_include) && __has_include("fuse_app_config.h")
+#  include "fuse_app_config.h"
+#endif
+
+/* argc >= 3: dynamic — argv[2] is a policy.bin path */
+/* FUSE_POLICY_* defined: static — use compiled-in macros */
+/* otherwise: error */
+```
+See `demos/camera_compress/host/main.c` for a complete reference implementation.
+
+---
+
 ## Review Checklist
 
 Before a demo is merged, a reviewer should be able to answer all of the following by reading
