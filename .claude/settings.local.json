@@ -1,30 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(apt-cache show:*)",
-      "Bash(apt-cache search:*)",
-      "Bash(head -10 grep -rn \"AOT_MAGIC_NUMBER\\\\|AOT_CURRENT_VERSION\\\\|aot_compatible_version\" /home/xin/fuse/wasm-micro-runtime/core/iwasm/aot/*.h)",
-      "Bash(head -10 grep -rn \"#define AOT_MAGIC_NUMBER\\\\|#define AOT_CURRENT_VERSION\" /home/xin/fuse/wasm-micro-runtime/)",
-      "Bash(cmake -S . -B build -DCMAKE_BUILD_TYPE=Release)",
-      "Bash(cmake --build /home/xin/fuse/build --config Release)",
-      "Bash(cmake --build /home/xin/fuse/build --config Release -- VERBOSE=1)",
-      "Bash(./build.py -c)",
-      "Bash(./tests/fuse_test)",
-      "Bash(./tests/fuse_test --gtest_filter=\"HalBridgeTest.TempCallbackInvokedExactlyOnce\")",
-      "Bash(./build.py)",
-      "Bash(./build.py -c -b Debug 2>&1)",
-      "Bash(ctest --output-on-failure)",
-      "Bash(ls /home/xinchen/code/fuse/demos/*/)",
-      "Bash(cmake --build build --config Release)",
-      "Bash(python3 /home/xinchen/code/fuse/tools/gen_app_config.py --input /home/xinchen/code/fuse/demos/camera_compress/app_config.json --output-dir /tmp/fuse_gen_test)",
-      "Read(//tmp/fuse_gen_test/**)",
-      "Bash(xxd /tmp/fuse_gen_test/camera_compress_policy.bin)",
-      "Bash(ctest)",
-      "Bash(./build.sh)",
+      "Bash(apt-cache:*)",
+      "Bash(cmake:*)",
+      "Bash(./build.py:*)",
+      "Bash(./build.sh:*)",
+      "Bash(./tests/fuse_test:*)",
+      "Bash(ctest:*)",
+      "Bash(xxd:*)",
       "Bash(python3:*)",
-      "Read(//tmp/fuse_test_gen/**)",
-      "Bash(xxd /tmp/fuse_test_gen/camera_compress_policy.bin)",
-      "Bash(cmake --build . --config Release)"
+      "Bash(wc:*)",
+      "Bash(ls:*)",
+      "Read(/tmp/**)"
     ]
   }
 }
