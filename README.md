@@ -89,7 +89,7 @@ Groups are selected via `hal_groups` in `app_config.json`. Without an app config
 
 ### Prerequisites
 
-- `wasi sdk` (C/C++ → WASM)
+- `wasi-sdk` (C/C++ → WASM)
 - `wabt` (WASM inspection)
 - `wamrc` (the WAMR AOT compiler) must be built from the WAMR submodule.
 

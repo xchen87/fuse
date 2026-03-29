@@ -17,8 +17,8 @@ cmake_minimum_required(VERSION 3.14)
 # ---------------------------------------------------------------------------
 # Locate toolchain binaries
 # ---------------------------------------------------------------------------
-find_program(WAT2WASM  wat2wasm  HINTS /opt/wabt/bin   NO_DEFAULT_PATH)
-find_program(WASI_CLANG clang    HINTS /opt/wasi-sdk/bin NO_DEFAULT_PATH)
+find_program(WAT2WASM  wat2wasm  HINTS /opt/wabt-1.0.37/bin   /opt/wabt/bin   NO_DEFAULT_PATH)
+find_program(WASI_CLANG clang    HINTS /opt/wasi-sdk-25.0-x86_64-linux/bin /opt/wasi-sdk/bin NO_DEFAULT_PATH)
 find_program(WAMRC     wamrc     HINTS
     ${CMAKE_SOURCE_DIR}/wasm-micro-runtime/wamr-compiler/build
     /opt/wamrc

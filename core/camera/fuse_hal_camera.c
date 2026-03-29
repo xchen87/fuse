@@ -28,18 +28,10 @@ static uint32_t fuse_native_camera_last_frame(wasm_exec_env_t exec_env,
 {
     fuse_module_desc_t *desc;
     wasm_module_inst_t  inst;
+    uint64_t            frame_bytes;
 
-    inst = wasm_runtime_get_module_inst(exec_env);
-    if (inst == NULL) {
-        return 0u;
-    }
-
-    desc = fuse_module_find_by_inst(inst);
-
+    desc = fuse_hal_resolve_desc(exec_env, &inst);
     if (desc == NULL) {
-        fuse_log_write(&g_ctx.log_ctx, FUSE_INVALID_MODULE_ID, 2u,
-                       "rogue exec_env: camera_last_frame");
-        wasm_runtime_set_exception(inst, "FUSE: rogue exec_env");
         return 0u;
     }
 
@@ -70,7 +62,12 @@ static uint32_t fuse_native_camera_last_frame(wasm_exec_env_t exec_env,
         return 0u;
     }
 
-    return (uint32_t)g_ctx.hal.camera.last_frame(buf, max_len);
+    frame_bytes = g_ctx.hal.camera.last_frame(buf, max_len);
+    /* HAL returns uint64_t; clamp to the buffer size before narrowing. */
+    if (frame_bytes > (uint64_t)max_len) {
+        frame_bytes = (uint64_t)max_len;
+    }
+    return (uint32_t)frame_bytes;
 }
 
 /* ---------------------------------------------------------------------------

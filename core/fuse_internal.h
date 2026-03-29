@@ -172,6 +172,42 @@ void fuse_policy_violation(fuse_module_desc_t *desc,
  * --------------------------------------------------------------------------- */
 fuse_module_desc_t *fuse_module_find_by_inst(wasm_module_inst_t inst);
 
+/* ---------------------------------------------------------------------------
+ * fuse_hal_resolve_desc — shared entry guard for all HAL native bridges.
+ *
+ * Resolves exec_env to a validated module descriptor.  *inst_out is always
+ * set before returning so callers can forward it to fuse_policy_violation()
+ * or wasm_runtime_validate_native_addr() regardless of the return value.
+ *
+ * Returns: non-NULL descriptor on success.
+ *          NULL when the instance is unknown (rogue exec_env) — the
+ *          "rogue exec_env" exception is set on the instance in that case,
+ *          or the instance itself is NULL (exec_env is being destroyed).
+ * --------------------------------------------------------------------------- */
+static inline fuse_module_desc_t *
+fuse_hal_resolve_desc(wasm_exec_env_t     exec_env,
+                      wasm_module_inst_t *inst_out)
+{
+    wasm_module_inst_t  inst;
+    fuse_module_desc_t *desc;
+
+    inst      = wasm_runtime_get_module_inst(exec_env);
+    *inst_out = inst;
+
+    if (inst == NULL) {
+        return NULL;
+    }
+
+    desc = fuse_module_find_by_inst(inst);
+    if (desc == NULL) {
+        fuse_log_write(&g_ctx.log_ctx, FUSE_INVALID_MODULE_ID, 2u,
+                       "rogue exec_env");
+        wasm_runtime_set_exception(inst, "FUSE: rogue exec_env");
+    }
+
+    return desc;
+}
+
 #ifdef __cplusplus
 }
 #endif

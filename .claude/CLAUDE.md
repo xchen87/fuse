@@ -95,22 +95,20 @@ wamrc -o module.aot module.wasm
 ```
 GoogleTest fetches automatically via CMake's `FetchContent` on first build. The test binary is `build/tests/fuse_test`.
 
-**Note:** `wamrc` is not pre-installed. Build it once from the WAMR submodule (requires building LLVM first):
-```bash
-# Step 1: build LLVM (one-time, ~45 min)
-cd wasm-micro-runtime/wamr-compiler && ./build_llvm.sh --arch X86
+**Note:** `wamrc` is already built at `wasm-micro-runtime/wamr-compiler/build/wamrc`.
+CMake's `find_program` searches this path automatically — no manual step needed.
+AOT test binaries are compiled automatically by `./build.py -c` when `wamrc`, `wat2wasm`, and `wasi-sdk clang` are all available.
+`wat2wasm` (wabt) and `wasi-sdk clang` are required to build the `.aot` test modules; without them the AOT-dependent tests are skipped.
+Current versioned installs (paths are first HINTS in `tests/CMakeLists.txt`):
+- **wabt**: `/opt/wabt-1.0.37/bin/`
+- **wasi-sdk**: `/opt/wasi-sdk-25.0-x86_64-linux/bin/`
 
-# Step 2: build wamrc
-mkdir -p build && cd build && cmake .. && make -j$(nproc)
-# Binary: wasm-micro-runtime/wamr-compiler/build/wamrc
-# CMake find_program already searches this path automatically.
-```
-After wamrc is built, `./build.py -c` will auto-compile all .wat test modules to .aot.
+If upgrading to a newer version, add the new versioned path as the first HINTS entry in `tests/CMakeLists.txt`.
 
 ## Docker Toolchain (paths inside container)
-- **WASI SDK** (compile C→wasm): `/opt/wasi-sdk` — compiler at `/opt/wasi-sdk/bin/clang`, sysroot at `/opt/wasi-sdk/share/wasi-sysroot`
-- **WABT** (wasm inspect/validate): `/opt/wabt/bin/` — includes `wasm2wat`, `wat2wasm`, `wasm-validate`
-- **wamrc** (wasm→AOT): built from `wasm-micro-runtime/wamr-compiler/build/wamrc` (not pre-installed)
+- **WASI SDK** (compile C→wasm): `/opt/wasi-sdk-25.0-x86_64-linux` — compiler at `.../bin/clang`, sysroot at `.../share/wasi-sysroot`
+- **WABT** (wasm inspect/validate): `/opt/wabt-1.0.37/bin/` — includes `wasm2wat`, `wat2wasm`, `wasm-validate`
+- **wamrc** (wasm→AOT): already built at `wasm-micro-runtime/wamr-compiler/build/wamrc`
 
 ## Module Contract
 Every FUSE *Module* **must** export `module_step()` as its primary entry point:

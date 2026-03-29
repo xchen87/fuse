@@ -24,17 +24,8 @@ static float fuse_native_temp_get_reading(wasm_exec_env_t exec_env)
     fuse_module_desc_t *desc;
     wasm_module_inst_t  inst;
 
-    inst = wasm_runtime_get_module_inst(exec_env);
-    if (inst == NULL) {
-        return 0.0f;
-    }
-
-    desc = fuse_module_find_by_inst(inst);
-
+    desc = fuse_hal_resolve_desc(exec_env, &inst);
     if (desc == NULL) {
-        fuse_log_write(&g_ctx.log_ctx, FUSE_INVALID_MODULE_ID, 2u,
-                       "rogue exec_env: temp_get_reading");
-        wasm_runtime_set_exception(inst, "FUSE: rogue exec_env");
         return 0.0f;
     }
 

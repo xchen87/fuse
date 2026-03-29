@@ -33,17 +33,8 @@ static void fuse_native_module_log_event(wasm_exec_env_t exec_env,
     char                safe_msg[FUSE_LOG_MSG_MAX];
     uint32_t            copy_len;
 
-    inst = wasm_runtime_get_module_inst(exec_env);
-    if (inst == NULL) {
-        return;
-    }
-
-    desc = fuse_module_find_by_inst(inst);
-
+    desc = fuse_hal_resolve_desc(exec_env, &inst);
     if (desc == NULL) {
-        fuse_log_write(&g_ctx.log_ctx, FUSE_INVALID_MODULE_ID, 2u,
-                       "rogue exec_env: module_log_event");
-        wasm_runtime_set_exception(inst, "FUSE: rogue exec_env");
         return;
     }
 

@@ -22,7 +22,7 @@ fuse_stat_t fuse_post_event(uint32_t event_id)
     if (!g_ctx.initialized) {
         return FUSE_ERR_NOT_INITIALIZED;
     }
-    if (event_id >= 32u) {
+    if (event_id >= FUSE_MAX_EVENT_ID) {
         return FUSE_ERR_INVALID_ARG;
     }
 
@@ -64,7 +64,7 @@ fuse_stat_t fuse_clear_event(uint32_t event_id)
     if (!g_ctx.initialized) {
         return FUSE_ERR_NOT_INITIALIZED;
     }
-    if (event_id >= 32u) {
+    if (event_id >= FUSE_MAX_EVENT_ID) {
         return FUSE_ERR_INVALID_ARG;
     }
 

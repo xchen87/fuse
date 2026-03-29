@@ -28,24 +28,19 @@ static void fuse_native_event_post(wasm_exec_env_t exec_env,
     wasm_module_inst_t  inst;
     fuse_module_desc_t *desc;
 
-    inst = wasm_runtime_get_module_inst(exec_env);
-    desc = fuse_module_find_by_inst(inst);
-
+    desc = fuse_hal_resolve_desc(exec_env, &inst);
     if (desc == NULL) {
-        fuse_log_write(&g_ctx.log_ctx, FUSE_INVALID_MODULE_ID, 2u,
-                       "event_post: unknown module instance");
-        wasm_runtime_set_exception(inst, "FUSE: rogue exec_env");
         return;
     }
 
     /* Gate on FUSE_CAP_EVENT_POST capability. */
-    if (!(desc->policy.capabilities & FUSE_CAP_EVENT_POST)) {
+    if (!fuse_policy_check_cap(&desc->policy, FUSE_CAP_EVENT_POST)) {
         fuse_policy_violation(desc, inst, "EVENT_POST");
         return;
     }
 
     /* Validate event_id range (fuse_post_event also checks, but be explicit). */
-    if (event_id >= 32u) {
+    if (event_id >= FUSE_MAX_EVENT_ID) {
         fuse_policy_violation(desc, inst, "EVENT_POST_OOB");
         return;
     }

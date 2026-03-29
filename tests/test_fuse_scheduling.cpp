@@ -202,9 +202,11 @@ TEST_F(SchedulingTest, StepInterval_FirstStepAlwaysRuns)
 /* -------------------------------------------------------------------------
  * Test 4: Second step called too early returns FUSE_ERR_INTERVAL_NOT_ELAPSED.
  *
- * Timer sequence:
- *   call 1 → 1000   step 1 start; last_step_at_us set to 1000
- *   call 2 → 1500   step 2 check: 1500 - 1000 = 500 < 1 000 000 → rejected
+ * Timer sequence (all calls including fuse_log_write timestamps):
+ *   fuse_module_load log  → 0      (log timestamp only)
+ *   fuse_module_start log → 0      (log timestamp only)
+ *   step 1 start          → 1000   last_step_at_us = 1000
+ *   step 2 check          → 1500   1500 - 1000 = 500 < 1 000 000 → rejected
  * ---------------------------------------------------------------------- */
 TEST_F(SchedulingTest, StepInterval_TooEarlyReturnsError)
 {
@@ -218,8 +220,10 @@ TEST_F(SchedulingTest, StepInterval_TooEarlyReturnsError)
 
     ::testing::InSequence seq;
     EXPECT_CALL(mock_hal_, TimerGetTimestamp())
-        .WillOnce(::testing::Return(1000u))
-        .WillOnce(::testing::Return(1500u))
+        .WillOnce(::testing::Return(0u))      /* fuse_module_load log write  */
+        .WillOnce(::testing::Return(0u))      /* fuse_module_start log write */
+        .WillOnce(::testing::Return(1000u))   /* step 1 start; last_step_at_us = 1000 */
+        .WillOnce(::testing::Return(1500u))   /* step 2 check: 500 < 1000000 → rejected */
         .WillRepeatedly(::testing::Return(1500u));
 
     fuse_module_id_t mid = FUSE_INVALID_MODULE_ID;
@@ -245,9 +249,11 @@ TEST_F(SchedulingTest, StepInterval_TooEarlyReturnsError)
  * (1000 < 1000) → false → allowed.  We use t=1 to keep the arithmetic
  * clearer and avoid ambiguity with the initial zero state.
  *
- * Timer sequence:
- *   call 1 → 1       step 1 start; last_step_at_us = 1, step_ever_run = true
- *   call 2 → 1001    step 2 check: 1001 - 1 = 1000 == 1000 → allowed
+ * Timer sequence (all calls including fuse_log_write timestamps):
+ *   fuse_module_load log  → 0       (log timestamp only)
+ *   fuse_module_start log → 0       (log timestamp only)
+ *   step 1 start          → 1       last_step_at_us = 1, step_ever_run = true
+ *   step 2 check          → 1001    1001 - 1 = 1000 == 1000 → allowed
  * ---------------------------------------------------------------------- */
 TEST_F(SchedulingTest, StepInterval_ExactlyAtIntervalRuns)
 {
@@ -261,8 +267,10 @@ TEST_F(SchedulingTest, StepInterval_ExactlyAtIntervalRuns)
 
     ::testing::InSequence seq;
     EXPECT_CALL(mock_hal_, TimerGetTimestamp())
-        .WillOnce(::testing::Return(1u))
-        .WillOnce(::testing::Return(1001u))
+        .WillOnce(::testing::Return(0u))      /* fuse_module_load log write  */
+        .WillOnce(::testing::Return(0u))      /* fuse_module_start log write */
+        .WillOnce(::testing::Return(1u))      /* step 1 start; last_step_at_us = 1 */
+        .WillOnce(::testing::Return(1001u))   /* step 2 check: 1001-1=1000 ≥ 1000 → allowed */
         .WillRepeatedly(::testing::Return(1001u));
 
     fuse_module_id_t mid = FUSE_INVALID_MODULE_ID;
@@ -279,9 +287,11 @@ TEST_F(SchedulingTest, StepInterval_ExactlyAtIntervalRuns)
 /* -------------------------------------------------------------------------
  * Test 6: Second step called well past the interval succeeds.
  *
- * Timer sequence:
- *   call 1 → 1       step 1 start; last_step_at_us = 1
- *   call 2 → 2001    step 2 check: 2001 - 1 = 2000 > 1000 → allowed
+ * Timer sequence (all calls including fuse_log_write timestamps):
+ *   fuse_module_load log  → 0       (log timestamp only)
+ *   fuse_module_start log → 0       (log timestamp only)
+ *   step 1 start          → 1       last_step_at_us = 1
+ *   step 2 check          → 2001    2001 - 1 = 2000 > 1000 → allowed
  * ---------------------------------------------------------------------- */
 TEST_F(SchedulingTest, StepInterval_AfterIntervalElapsedRuns)
 {
@@ -295,8 +305,10 @@ TEST_F(SchedulingTest, StepInterval_AfterIntervalElapsedRuns)
 
     ::testing::InSequence seq;
     EXPECT_CALL(mock_hal_, TimerGetTimestamp())
-        .WillOnce(::testing::Return(1u))
-        .WillOnce(::testing::Return(2001u))
+        .WillOnce(::testing::Return(0u))      /* fuse_module_load log write  */
+        .WillOnce(::testing::Return(0u))      /* fuse_module_start log write */
+        .WillOnce(::testing::Return(1u))      /* step 1 start; last_step_at_us = 1 */
+        .WillOnce(::testing::Return(2001u))   /* step 2 check: 2001-1=2000 > 1000 → allowed */
         .WillRepeatedly(::testing::Return(2001u));
 
     fuse_module_id_t mid = FUSE_INVALID_MODULE_ID;
@@ -339,6 +351,8 @@ TEST_F(SchedulingTest, StepInterval_NotElapsedDoesNotUpdateTimestamp)
 
     ::testing::InSequence seq;
     EXPECT_CALL(mock_hal_, TimerGetTimestamp())
+        .WillOnce(::testing::Return(0u))         /* fuse_module_load log write  */
+        .WillOnce(::testing::Return(0u))         /* fuse_module_start log write */
         .WillOnce(::testing::Return(1000u))      /* step 1 start; sets last_step_at_us = 1000 */
         .WillOnce(::testing::Return(1500u))      /* step 2 check → rejected; last_step_at_us unchanged */
         .WillOnce(::testing::Return(1001100u))   /* step 3 check/start → passes from t1 but not t2 */

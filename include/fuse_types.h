@@ -114,6 +114,11 @@ typedef uint32_t fuse_module_id_t;
 /* Maximum byte length of a single security-log message (including NUL). */
 #define FUSE_LOG_MSG_MAX        (128u)
 
+/* Valid event identifiers are in [0, FUSE_MAX_EVENT_ID).
+ * event_subscribe bitmask bits and fuse_post_event() / fuse_clear_event()
+ * both enforce this upper bound. */
+#define FUSE_MAX_EVENT_ID       (32u)
+
 #ifdef __cplusplus
 }
 #endif
