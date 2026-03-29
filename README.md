@@ -26,10 +26,10 @@ FUSE is a deterministic edge FaaS runtime built for constrained and safety-criti
 │  Host (RTOS / bare-metal)                           │
 │  ┌───────────────────────────────────────────────┐  │
 │  │  FUSE Runtime                                 │  │
-│  │  ┌─────────────┐  ┌─────────────────────────┐ │  │
-│  │  │  Module A   │  │  Module B               │ │  │
-│  │  │  (WASM/AOT) │  │  (WASM/AOT)             │ │  │
-│  │  └──────┬──────┘  └────────────┬────────────┘ │  │
+│  │  ┌─────────────┐        ┌─────────────┐       │  │
+│  │  │  Module A   │        │  Module B   │       │  │
+│  │  │  (WASM/AOT) │        │  (WASM/AOT) │       │  │
+│  │  └──────┬──────┘        └──────┬──────┘       │  │
 │  │         │  policy-checked API  │              │  │
 │  │  ┌──────▼──────────────────────▼────────────┐ │  │
 │  │  │  HAL Bridge  │  Log  │  Event Bus        │ │  │
@@ -75,8 +75,8 @@ Groups are selected via `hal_groups` in `app_config.json`. Without an app config
 
 ### Prerequisites
 
-- WASI SDK (C/C++ → WASM)
-- WABT (WASM inspection)
+- `wasi sdk` (C/C++ → WASM)
+- `wabt` (WASM inspection)
 - `wamrc` (the WAMR AOT compiler) must be built from the WAMR submodule.
 
 ### Build & Test
@@ -103,6 +103,14 @@ cd demos/camera_compress && ./build.sh --clean  # clean rebuild
 ### Execution Model
 
 FUSE drives modules by calling a single exported entry point — `module_step()` — once per scheduling quantum. Modules must complete all work within that one call and return. Infinite loops inside `module_step()` will exhaust the CPU quota and cause the module to be trapped. Two optional lifecycle exports, `module_init()` and `module_deinit()`, are called once on first start and on unload respectively.
+
+### Execution Invocation
+
+There are three ways module step function can be triggered. They can be combined:
+
+- *MANUAL*: Host has full control when to invoke. Most predicatable and well-suited for tightly coordinated pipelines.
+- *INTERVAL*: Eligible to run when the `step_interval_us` has elapsed since last invocation.
+- *EVENT*: Either a host generated event, or by another module. Enables event-chaining pipelines where upstream module signal downstream module without polling.
 
 ### Requirements
 
@@ -155,6 +163,21 @@ FUSE separates platform-specific HAL code (timer, quota interrupt) from the OS-a
 FUSE's HAL group system is designed to be extended. Adding support for a new hardware peripheral means implementing a new group under `core/<group>/` — a header defining the callback struct, a source file registering the native symbols with WAMR, and a corresponding capability bit and compile flag. The rest of the runtime requires no changes.
 
 Community contributions for new HAL groups are welcome. If you are integrating FUSE on a new platform and add support for hardware not yet covered (e.g. UART, SPI, GPIO, GNSS), please consider opening a pull request so others can benefit.
+
+## Co-developed with Claude Code Agent Swarm
+
+FUSE is co-developed with [Claude Code](https://claude.ai/code). The project uses a multi-agent swarm setup where specialized Claude agents handle distinct roles in the development workflow:
+
+| Agent | Role |
+|---|---|
+| `@developer` | C code implementation — core runtime, HAL bridges, platform layers |
+| `@sentinel` | Security audit — mandatory review of all C code before merge |
+| `@validator` | Test generation — unit and integration test cases for every coding block |
+| `@scripter` | Tooling — helper scripts such as policy JSON to binary conversion |
+
+The agent workflows are defined in `.claude/feature_addition.md` and `.claude/application_demo.md`, covering when and how each agent is invoked for new features and demos. All agents operate under the same coding standards and security requirements as human contributors.
+
+Contributions to the Claude Code setup itself are welcome — if you have improvements to the agent workflows, prompts, or tooling scripts, feel free to open a pull request.
 
 ## License
 
