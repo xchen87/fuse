@@ -1,6 +1,6 @@
 # FUSE — Flexible Universal Secure Edge Runtime
 
-![FUSE Logo](fuse-logo.svg)
+![FUSE Logo](fuse-logo.png)
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
