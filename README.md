@@ -1,0 +1,150 @@
+# FUSE — Flexible Universal Secure Edge Runtime
+
+![FUSE Logo](fuse-logo.png)
+
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+FUSE is a deterministic edge FaaS runtime built for constrained and safety-critical systems, with space and satellite applications as a primary target. Built on [WAMR](https://github.com/bytecodealliance/wasm-micro-runtime), it provides isolated, policy-bounded sandboxes with predictable scheduling and resource consumption — suitable for RTOS environments, bare-metal systems, and on-board computers.
+
+> **Early-stage project** — APIs and interfaces are evolving rapidly. Frequent breaking changes should be expected. Feedback and contributions of any kind are very welcome.
+
+## Key Properties
+
+- **Review-friendly policy** — every deployment is described by a single `app_config.json` that captures hardware capabilities, memory budgets, CPU quotas, and scheduling parameters in human-readable form
+- **Hardware portability** — the FUSE core is easily portable across different host (RTOS, bare-metal, Linux); only a thin HAL callback layer needs porting to new hardware
+- **Language portability** — modules can be written in any language that compiles to WASM (C, C++, Rust, Zig, and others); the FUSE runtime itself is pure C
+- **Strict isolation** — each module runs in its own WASM linear memory; cross-module and host memory access is impossible by construction
+- **Fail-safe** — module failures are guaranteed to be trapped within the sandbox and do not affect the host
+- **AOT execution** — modules are compiled to native code ahead of time; no interpreter overhead and near native execution
+- **Flexible scheduling** — modules may be activated by explicit host trigger, time based trigger, or event trigger. Including hardware events, or event chaining between modules enabling zero-polling pipeline topologies
+- **Flexible runtime adjustment** — modules can be added, removed, and updated at runtime
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Host (RTOS / bare-metal)                           │
+│  ┌───────────────────────────────────────────────┐  │
+│  │  FUSE Runtime                                 │  │
+│  │  ┌─────────────┐  ┌─────────────────────────┐ │  │
+│  │  │  Module A   │  │  Module B               │ │  │
+│  │  │  (WASM/AOT) │  │  (WASM/AOT)             │ │  │
+│  │  └──────┬──────┘  └────────────┬────────────┘ │  │
+│  │         │  policy-checked API  │              │  │
+│  │  ┌──────▼──────────────────────▼────────────┐ │  │
+│  │  │  HAL Bridge  │  Log  │  Event Bus        │ │  │
+│  │  └──────────────────────────────────────────┘ │  │
+│  └───────────────────────────────────────────────┘  │
+│  Hardware: timer, camera, temp sensor, …            │
+└─────────────────────────────────────────────────────┘
+```
+
+Modules communicate with the outside world exclusively through FUSE's policy-checked native imports. Direct host memory access, cross-module calls, and unchecked hardware access are structurally impossible.
+
+## Policy Model
+
+Every module is governed by a policy that specifies:
+
+| Field | Description |
+|---|---|
+| `capabilities` | Which HAL groups the module may access (timer, camera, temp sensor, event, etc) |
+| `memory_pages_max` | Maximum WASM linear memory (1 page = 64 KiB) |
+| `stack_size` / `heap_size` | WASM stack and heap budgets in bytes |
+| `cpu_quota_us` | Max microseconds per step; 0 = unlimited |
+| `step_interval_us` | Minimum interval between steps for interval-driven modules |
+| `activation_mask` | Activation modes: interval, event, or manual |
+| `event_subscribe` | Bitmask of event IDs (0–31) this module reacts to |
+
+Policies are declared in `app_config.json` alongside the application configuration, converted to binary by `tools/gen_app_config.py`, and can also be loaded dynamically at runtime.
+
+## HAL Groups
+
+Hardware APIs are organised into compile-time-conditional groups. Only groups present on the target platform are compiled in, producing zero dead code for absent hardware.
+
+| Group | Capability | Always present |
+|---|---|---|
+| Temperature sensor | `TEMP_SENSOR` | No |
+| Timer | `TIMER` | No |
+| Camera | `CAMERA` | No |
+| Log | `LOG` | Yes |
+| Event post | `EVENT_POST` | Yes |
+
+Groups are selected via `hal_groups` in `app_config.json`. Without an app config (dev/test builds), all groups are enabled.
+
+## Getting Started
+
+### Prerequisites
+
+- WASI SDK (C/C++ → WASM)
+- WABT (WASM inspection)
+- `wamrc` (the WAMR AOT compiler) must be built from the WAMR submodule.
+
+### Build & Test
+
+```bash
+# Clean build FUSE Runtime library (all HAL groups enabled — suitable for tests)
+./build.py -c
+
+# Run all tests
+cd build && ctest
+```
+
+### Build a Demo
+
+Each demo is a standalone project with its own build script and `app_config.json`:
+
+```bash
+cd demos/camera_compress && ./build.sh          # release
+cd demos/camera_compress && ./build.sh --clean  # clean rebuild
+```
+
+## Module Development
+
+### Execution Model
+
+FUSE drives modules by calling a single exported entry point — `module_step()` — once per scheduling quantum. Modules must complete all work within that one call and return. Infinite loops inside `module_step()` will exhaust the CPU quota and cause the module to be trapped. Two optional lifecycle exports, `module_init()` and `module_deinit()`, are called once on first start and on unload respectively.
+
+### Requirements
+
+- **No standard library** — modules are freestanding WASM binaries with no libc and no WASI. Standard I/O functions such as `printf` are unavailable. All output goes through the FUSE log API.
+- **No infinite loops** — `module_step()` must return promptly. FUSE enforces a per-module CPU quota; exceeding it terminates and traps the module.
+- **No dynamic memory** — modules must not rely on `malloc`/`free`. Static and stack allocation only. WASM linear memory is zero-initialised at startup.
+- **Declare all imports explicitly** — every FUSE API a module uses must be declared as a WASM import with the `env` module name and the correct function name. Undeclared imports will cause load failure.
+- **Export required symbols** — `module_step` must be exported. Omitting it will cause `fuse_module_load()` to fail.
+- **Stay within policy bounds** — any attempt to access a hardware API not listed in the module's `capabilities`, or to post an out-of-range event ID, results in an immediate policy violation trap.
+
+### Compilation Pipeline
+
+Modules are compiled in two stages: source language → WASM binary, then WASM binary → AOT native binary via `wamrc`. The resulting `.aot` file is what FUSE loads at runtime. The WASM intermediate is discarded after AOT compilation.
+
+## Demos
+
+### `camera_compress`
+
+A single-module demo that captures camera frames and compresses them using run-length encoding (RLE). Demonstrates interval-based scheduling, camera and timer HAL access, and policy enforcement.
+
+### `camera_filter_compress`
+
+A two-module event-chained pipeline. A `frame_filter` module wakes on a `CAMERA_FRAME_READY` event, analyses each frame's variance, and forwards only qualifying frames by posting a `DATA_CAPTURED` event. A `frame_compress` module wakes on `DATA_CAPTURED` and applies RLE compression. Neither module polls — each wakes only when its subscribed event fires.
+
+```
+[ISR] CAMERA_FRAME_READY
+        │
+        ▼
+  frame_filter  ── variance check ──►  DATA_CAPTURED
+                                            │
+                                            ▼
+                                     frame_compress  ── RLE output
+```
+
+## Extending Hardware Support
+
+FUSE's HAL group system is designed to be extended. Adding support for a new hardware peripheral means implementing a new group under `core/<group>/` — a header defining the callback struct, a source file registering the native symbols with WAMR, and a corresponding capability bit and compile flag. The rest of the runtime requires no changes.
+
+Community contributions for new HAL groups are welcome. If you are integrating FUSE on a new platform and add support for hardware not yet covered (e.g. UART, SPI, GPIO, GNSS), please consider opening a pull request so others can benefit.
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+
+FUSE builds on [wasm-micro-runtime](https://github.com/bytecodealliance/wasm-micro-runtime) (Apache 2.0).
