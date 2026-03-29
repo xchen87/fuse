@@ -163,3 +163,47 @@ endif()
 # ---------------------------------------------------------------------------
 include(GoogleTest)
 gtest_discover_tests(fuse_test)
+
+# ---------------------------------------------------------------------------
+# Platform integration tests
+# ---------------------------------------------------------------------------
+
+# Linux platform tests — always built when fuse is the top-level project on Linux.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(fuse_platform_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/platform/linux/test_platform_linux.cpp
+    )
+    # Link fuse_platform_linux directly — not the alias — so this test always
+    # uses the Linux POSIX implementation regardless of FUSE_PLATFORM.
+    target_link_libraries(fuse_platform_test PRIVATE
+        GTest::gtest_main
+        fuse_platform_linux
+    )
+    target_include_directories(fuse_platform_test PRIVATE
+        ${CMAKE_SOURCE_DIR}          # so "platform/platform.h" resolves
+        ${CMAKE_SOURCE_DIR}/include  # fuse.h
+    )
+    gtest_discover_tests(fuse_platform_test
+        PROPERTIES LABELS "platform"
+    )
+endif()
+
+# FreeRTOS platform tests — built when FUSE_PLATFORM=freertos.
+if(FUSE_PLATFORM STREQUAL "freertos")
+    add_executable(fuse_platform_freertos_test
+        ${CMAKE_CURRENT_SOURCE_DIR}/platform/freertos/test_platform_freertos.cpp
+    )
+    # Link fuse_platform_freertos directly — not the alias.
+    target_link_libraries(fuse_platform_freertos_test PRIVATE
+        GTest::gtest
+        GTest::gmock
+        fuse_platform_freertos
+    )
+    target_include_directories(fuse_platform_freertos_test PRIVATE
+        ${CMAKE_SOURCE_DIR}          # "platform/platform.h"
+        ${CMAKE_SOURCE_DIR}/include  # fuse.h
+    )
+    # Custom main in test file — do not use gtest_main.
+    add_test(NAME PlatformFreeRTOS COMMAND fuse_platform_freertos_test)
+    set_tests_properties(PlatformFreeRTOS PROPERTIES LABELS "platform")
+endif()

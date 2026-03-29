@@ -46,6 +46,14 @@ def parse_args():
             help="Build output directory (default: build)",
             )
 
+    parser.add_argument(
+            "-p",
+            "--platform",
+            choices=["linux", "freertos"],
+            default="linux",
+            help="Target platform (default: linux)",
+            )
+
     args = parser.parse_args()
     return args
 
@@ -68,6 +76,7 @@ def main():
             "-S", ".",
             "-B", build_dir,
             f"-DCMAKE_BUILD_TYPE={args.build_config}",
+            f"-DFUSE_PLATFORM={args.platform}",
     ]
 
     if args.verbose:

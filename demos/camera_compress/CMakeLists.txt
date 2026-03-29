@@ -139,10 +139,7 @@ endif()
 #   FUSE_HAL_ENABLE_*       → consistent fuse_hal_t layout
 # ---------------------------------------------------------------------------
 add_executable(camera_compress_host host/main.c)
-target_link_libraries(camera_compress_host PRIVATE fuse)
-# _GNU_SOURCE enables POSIX + GNU extensions (clock_gettime, sigaction, usleep)
-# on Linux.  Demo hosts are Linux-specific; this is intentional.
-target_compile_definitions(camera_compress_host PRIVATE _GNU_SOURCE)
+target_link_libraries(camera_compress_host PRIVATE fuse fuse_platform)
 target_compile_options(camera_compress_host PRIVATE
     $<$<CONFIG:Debug>:-g -O0>
     $<$<CONFIG:Release>:-O2>

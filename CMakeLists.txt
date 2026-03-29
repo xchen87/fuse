@@ -10,8 +10,24 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 
-set(WAMR_BUILD_PLATFORM "linux")
-set(WAMR_BUILD_TARGET "X86_64")
+# ---------------------------------------------------------------------------
+# Platform selection
+# ---------------------------------------------------------------------------
+set(FUSE_PLATFORM "linux" CACHE STRING "Target platform: linux | freertos")
+set_property(CACHE FUSE_PLATFORM PROPERTY STRINGS linux freertos)
+message(STATUS "FUSE platform: ${FUSE_PLATFORM}")
+
+if(FUSE_PLATFORM STREQUAL "freertos")
+    # FreeRTOS POSIX simulator: WAMR still targets Linux/x86 for CI builds.
+    # For real Cortex-M4 hardware, override WAMR_BUILD_PLATFORM and
+    # WAMR_BUILD_TARGET in your BSP toolchain file.
+    set(WAMR_BUILD_PLATFORM "linux")
+    set(WAMR_BUILD_TARGET   "X86_64")
+else()
+    set(WAMR_BUILD_PLATFORM "linux")
+    set(WAMR_BUILD_TARGET   "X86_64")
+endif()
+
 set(WAMR_BUILD_INTERP 0)
 set(WAMR_BUILD_FAST_INTERP 0)
 set(WAMR_BUILD_AOT 1)
@@ -104,6 +120,22 @@ foreach(_grp TEMP_SENSOR TIMER CAMERA)
         message(STATUS "[fuse] HAL group enabled: ${_grp}")
     endif()
 endforeach()
+
+# ---------------------------------------------------------------------------
+# Platform HAL implementation
+#
+# platform/linux is always built — it is needed by the test suite regardless
+# of FUSE_PLATFORM (tests run on Linux, so the linux platform tests always
+# link fuse_platform_linux directly).
+#
+# If FUSE_PLATFORM != linux, the selected platform subdirectory is also added.
+# The 'fuse_platform' alias is created here and resolves to the selected impl.
+# ---------------------------------------------------------------------------
+add_subdirectory(platform/linux)
+if(NOT FUSE_PLATFORM STREQUAL "linux")
+    add_subdirectory(platform/${FUSE_PLATFORM})
+endif()
+add_library(fuse_platform ALIAS fuse_platform_${FUSE_PLATFORM})
 
 # ---------------------------------------------------------------------------
 # Tests — only when fuse is the top-level project (demos build separately)

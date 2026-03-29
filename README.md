@@ -137,6 +137,19 @@ A two-module event-chained pipeline. A `frame_filter` module wakes on a `CAMERA_
                                      frame_compress  ── RLE output
 ```
 
+## Supported Platforms
+
+FUSE separates platform-specific HAL code (timer, quota interrupt) from the OS-agnostic core. Implementations live under `platform/<name>/` and expose a common interface (`platform/platform.h`). Select a platform at build time with `-DFUSE_PLATFORM=<name>` (default: `linux`).
+
+| Platform | Architecture | HAL implementation | CI tested |
+|---|---|---|---|
+| `linux` | x86-64 | `platform/linux/` — `clock_gettime`, `SIGALRM`/`setitimer` | Yes |
+| `freertos` | ARM Cortex-M4 (POSIX sim for CI) | `platform/freertos/` — `xTaskGetTickCount`, `xTimerCreate` | Yes (POSIX simulator) |
+
+**Adding a new platform** requires implementing the four-function `platform/platform.h` interface (`init`, `get_timestamp_us`, `quota_arm`, `quota_cancel`) and a small CMakeLists.txt. No changes to the FUSE core are needed.
+
+> **FreeRTOS note:** software timer resolution is limited by `configTICK_RATE_HZ` (1 ms at 1 kHz). CPU quotas shorter than one tick round up to one tick. For sub-millisecond quota precision on real hardware, wire a hardware timer peripheral directly to `quota_arm`/`quota_cancel`.
+
 ## Extending Hardware Support
 
 FUSE's HAL group system is designed to be extended. Adding support for a new hardware peripheral means implementing a new group under `core/<group>/` — a header defining the callback struct, a source file registering the native symbols with WAMR, and a corresponding capability bit and compile flag. The rest of the runtime requires no changes.
