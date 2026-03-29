@@ -29,8 +29,9 @@ typedef struct {
     wasm_function_inst_t  fn_init;    /* NULL if not exported */
     wasm_function_inst_t  fn_deinit;  /* NULL if not exported */
     bool                  init_called;
-    bool                  step_ever_run;   /* true after first successful step; avoids 0-sentinel collision */
-    uint64_t              last_step_at_us; /* step_start_us of last successful step */
+    bool                  step_ever_run;      /* true after first successful step; avoids 0-sentinel collision */
+    uint64_t              last_step_at_us;    /* step_start_us of last successful step */
+    _Atomic uint32_t      event_latch;        /* bitmask of pending event IDs; set by fuse_post_event() (ISR-safe) */
 } fuse_module_desc_t;
 
 /* Global singleton — check g_ctx.initialized before any WAMR call */
@@ -48,9 +49,13 @@ extern fuse_context_t g_ctx;
 Helper: `fuse_module_desc_t *fuse_module_find_by_inst(wasm_module_inst_t inst)` — returns NULL if not found (rogue exec_env).
 
 # NativeSymbol Registration Pattern
-*(when adding a new HAL function — avoids re-reading `core/fuse_core.c` and `core/fuse_hal.c`)*
+*(when adding a new HAL group — avoids re-reading individual `core/<group>/fuse_hal_<group>.c` files)*
 
-**Step 1** — Add bridge function in `core/fuse_hal.c`:
+Each HAL group lives under `core/<group>/` and has its own `fuse_hal_<group>.c` that implements:
+1. The native bridge function(s) (`fuse_native_*`)
+2. A `fuse_hal_<group>_register_natives()` function that calls `wasm_runtime_register_natives()`
+
+**Step 1** — Add bridge function in `core/<group>/fuse_hal_<group>.c`:
 ```c
 RetType fuse_native_my_func(wasm_exec_env_t exec_env /*, args...*/) {
     wasm_module_inst_t inst = wasm_runtime_get_module_inst(exec_env);
@@ -61,18 +66,25 @@ RetType fuse_native_my_func(wasm_exec_env_t exec_env /*, args...*/) {
     }
     /* For pointer args: validate before use */
     if (!wasm_runtime_validate_native_addr(inst, buf, (uint64_t)len)) { /* trap */ }
-    return g_ctx.hal.my_func(/* args */);
+    return g_ctx.hal.my_group.my_func(/* args */);
+}
+
+static NativeSymbol k_my_group_natives[] = {
+    { "my_func", fuse_native_my_func, "SIGNATURE", NULL }
+};
+
+void fuse_hal_my_group_register_natives(void) {
+    wasm_runtime_register_natives("env", k_my_group_natives,
+                                  sizeof(k_my_group_natives) / sizeof(k_my_group_natives[0]));
 }
 ```
 
-**Step 2** — Register in `k_native_symbols[]` in `core/fuse_core.c`:
-```c
-{ "my_func", fuse_native_my_func, "SIGNATURE", NULL }
-```
+**Step 2** — Call `fuse_hal_my_group_register_natives()` from `fuse_init()` in `core/fuse_core.c` (inside the appropriate `#ifdef FUSE_HAL_ENABLE_MY_GROUP` guard).
+
 WAMR signature strings: `"()f"` (→float) · `"()I"` (→uint64) · `"(*~)I"` (ptr+len→uint64) · `"(*~i)"` (ptr+len+i32→void)
 `*` = WAMR auto-converts wasm linear-memory offset to native ptr · `~` = paired uint32 length
 
-**Step 3** — Add callback typedef + field to `fuse_hal_t` in `include/fuse.h`.
+**Step 3** — Add the group sub-struct and field to `fuse_hal_t` in `include/fuse.h` (inside `#ifdef FUSE_HAL_ENABLE_MY_GROUP`).
 
 **Step 4** — Add `FUSE_CAP_MY_CAP` bit to `include/fuse_types.h`.
 

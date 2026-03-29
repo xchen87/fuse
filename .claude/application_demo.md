@@ -84,20 +84,27 @@ Include the generated config header for platform constants:
 #endif
 ```
 
-Initialize `fuse_hal_t` using the **grouped struct syntax** — only fill groups that exist on
-this platform (matching `hal_groups` in `app_config.json`):
+Call `fuse_platform_init()` first, then wire the platform callbacks into `fuse_hal_t`.
+Fill only the hardware groups that exist on this platform (matching `hal_groups` in `app_config.json`):
+
 ```c
+#include "platform/platform.h"
+
+fuse_platform_init();   /* registers signal handlers / timer handles */
+
 fuse_hal_t hal;
 memset(&hal, 0, sizeof(hal));
 #ifdef FUSE_HAL_ENABLE_TIMER
-hal.timer.get_timestamp = my_timer_fn;
+hal.timer.get_timestamp = fuse_platform_get_timestamp_us;
 #endif
 #ifdef FUSE_HAL_ENABLE_CAMERA
-hal.camera.last_frame   = my_camera_fn;
+hal.camera.last_frame   = my_camera_fn;   /* application-specific */
 #endif
-hal.quota_arm    = my_quota_arm_fn;
-hal.quota_cancel = my_quota_cancel_fn;
+hal.quota_arm    = fuse_platform_quota_arm;
+hal.quota_cancel = fuse_platform_quota_cancel;
 ```
+
+Use `fuse_platform_sleep_us()` in the polling loop instead of `usleep()`.
 
 Use `FUSE_POLICY_<MODULE>_*` macros from `fuse_app_config.h` to populate `fuse_policy_t`
 instead of hardcoded numbers.
@@ -135,8 +142,9 @@ output paths, target names). `build.sh` is generic — copy verbatim, no edits n
   - `fuse/include` → `fuse.h`, `fuse_types.h`
   - `<build>/generated/` → `fuse_app_config.h`, `FUSE_POLICY_*` macros
   - `FUSE_HAL_ENABLE_*` compile definitions → consistent `fuse_hal_t` layout
-- `_GNU_SOURCE` defined on the host executable for POSIX APIs (`clock_gettime`,
-  `sigaction`, `usleep`) — Linux demo hosts require this with `-std=c99`.
+- Link `fuse_platform` alongside `fuse`: `target_link_libraries(<host> PRIVATE fuse fuse_platform)`
+  — this provides `platform/platform.h` and the selected platform implementation. `_GNU_SOURCE`
+  and other OS-specific flags are set internally by the platform library, not by the demo.
 
 **Do NOT add the demo to the fuse root `CMakeLists.txt`** — demos are fully standalone.
 
@@ -203,7 +211,7 @@ with `fuse_policy_from_bin()`. The `app_config.json` may omit the `modules` sect
 
 ```c
 /* Read policy binary from file / uplink buffer */
-uint8_t policy_buf[24];  /* sizeof(fuse_policy_t) */
+uint8_t policy_buf[32];  /* sizeof(fuse_policy_t) — 8 × uint32_t */
 /* ... fill policy_buf ... */
 
 fuse_policy_t policy;
@@ -246,3 +254,5 @@ only `app_config.json` (without reading any C source):
 - [ ] For each module: what is its memory budget (pages × 64 KiB + heap)?
 - [ ] For each module: what is its maximum CPU time per step?
 - [ ] For each module: what is the minimum time between steps?
+- [ ] For each module: what activation modes are enabled (interval, event, manual)?
+- [ ] For each module: which event IDs does it subscribe to?

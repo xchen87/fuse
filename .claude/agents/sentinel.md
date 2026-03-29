@@ -17,7 +17,7 @@ FUSE has two distinct layers — do not conflate them:
 
 | Layer | Location | Rule |
 |-------|----------|------|
-| **Native bridge** (`fuse_native_*` in `core/fuse_hal.c`) | Called by WAMR when module invokes a host function | **MUST** call `wasm_runtime_validate_native_addr()` on every buffer arg before any dereference |
+| **Native bridge** (`fuse_native_*` in `core/<group>/fuse_hal_<group>.c`) | Called by WAMR when module invokes a host function | **MUST** call `wasm_runtime_validate_native_addr()` on every buffer arg before any dereference |
 | **HAL callback** (`hal.camera_last_frame` etc., implemented in host/test code) | Called by the native bridge *after* validation | Receives an already-validated native pointer — **does NOT need** `wasm_runtime_validate_native_addr()`. Flag missing NULL guards as LOW, not HIGH. |
 
 Flagging a HAL callback for missing `wasm_runtime_validate_native_addr()` is a **false positive** — the validation already happened in the native bridge one call above it.

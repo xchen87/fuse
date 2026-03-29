@@ -1,6 +1,6 @@
 # Module to FUSE API
-- **Constraint** All Module to FUSE API calls are checked against Module Policy before execution.
-- Module to FUSE calls are either HAL API (hardware access) or Log API (security log).
+- **Constraint**: All Module to FUSE API calls are checked against the module's Policy before execution.
+- Module to FUSE calls fall into three categories: HAL API (hardware access), Log API (security log), and Event API (inter-module signalling).
 
 ## C Module Boilerplate
 *(freestanding — no libc, no WASI; compiled with `--target=wasm32-unknown-unknown -nostdlib`)*

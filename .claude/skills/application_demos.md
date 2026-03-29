@@ -36,46 +36,34 @@ __attribute__((export_name("module_step"))) void module_step(void) { /* no infin
 /* Optional: module_init, module_deinit */
 ```
 
-**CMake demo pattern** (subdirectory added via root `add_subdirectory(demos/<name>)`):
-```cmake
-find_program(WASI_CLANG clang HINTS /opt/wasi-sdk/bin NO_DEFAULT_PATH)
-find_program(WAMRC wamrc HINTS ${CMAKE_SOURCE_DIR}/wasm-micro-runtime/wamr-compiler/build /opt/wamrc /usr/local/bin)
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
+**CMake demo pattern** (each demo is a **standalone CMake project** — NOT added to the root via `add_subdirectory`):
 
-# Policy JSON → binary (always runs):
-add_custom_command(OUTPUT policy.bin
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tools/policy_to_bin.py"
-            --input policy.json --output policy.bin
-    DEPENDS policy.json "${CMAKE_SOURCE_DIR}/tools/policy_to_bin.py")
-add_custom_target(my_policy ALL DEPENDS policy.bin)
+Copy the boilerplate from `demos/demo_template/` and replace the project name placeholder. See `@application_demo.md` for the full step-by-step workflow.
 
-# C → WASM → AOT (skipped gracefully if toolchain absent):
-if(WASI_CLANG AND WAMRC)
-    add_custom_command(OUTPUT module.wasm COMMAND ${WASI_CLANG} ... DEPENDS module.c)
-    add_custom_command(OUTPUT module.aot  COMMAND ${WAMRC} ...    DEPENDS module.wasm)
-    add_custom_target(my_aot ALL DEPENDS module.aot)
-endif()
+Key points:
+- `add_subdirectory("${FUSE_DIR}" fuse_build)` — demo pulls in fuse as a subdirectory
+- `target_link_libraries(my_host PRIVATE fuse fuse_platform)` — always link both `fuse` and `fuse_platform`
+- `FUSE_APP_CONFIG` is set before `add_subdirectory` so fuse compiles with only the demo's HAL groups
+- No explicit `target_include_directories` needed — headers propagate via fuse's PUBLIC properties
 
-# Host executable uses parent project's 'fuse' target (no find_package needed):
-add_executable(my_host host/main.c)
-target_link_libraries(my_host PRIVATE fuse)
-target_include_directories(my_host PRIVATE "${CMAKE_SOURCE_DIR}/include")
-```
-
-**Policy JSON template** (all fields required by `tools/policy_to_bin.py`, outputs 24-byte binary):
+**Policy JSON template** (all fields required by `tools/gen_app_config.py`, outputs 32-byte binary):
 ```json
 {
-    "capabilities": 14,
+    "capabilities": ["TIMER", "CAMERA", "LOG"],
     "memory_pages_max": 62,
     "stack_size": 8192,
     "heap_size": 262144,
     "cpu_quota_us": 1000,
-    "step_interval_us": 10000000
+    "step_interval_us": 10000000,
+    "activation_mask": ["INTERVAL"],
+    "event_subscribe": 0
 }
 ```
-- `capabilities`: OR of `FUSE_CAP_CAMERA=0x04`, `FUSE_CAP_LOG=0x08`, `FUSE_CAP_TIMER=0x02`, `FUSE_CAP_TEMP_SENSOR=0x01`
+- `capabilities`: subset of `FUSE_CAP_TEMP_SENSOR=0x01`, `FUSE_CAP_TIMER=0x02`, `FUSE_CAP_CAMERA=0x04`, `FUSE_CAP_LOG=0x08`, `FUSE_CAP_EVENT_POST=0x10`
+- `activation_mask`: `INTERVAL=0x01` (time-driven), `EVENT=0x02` (event-driven), `MANUAL=0x04`
+- `event_subscribe`: bitmask of event IDs (bits 0–31) this module reacts to
 - `step_interval_us=0` disables interval enforcement (host drives timing manually)
-- `cpu_quota_us=0` disables the 1ms wall-clock quota
+- `cpu_quota_us=0` disables the wall-clock quota
 
 **Memory constraint** (4MB combined = `memory_pages_max=62` + `heap_size=262144`):
 - 62 × 65536 + 262144 = 4,194,304 bytes exactly
@@ -91,7 +79,7 @@ target_include_directories(my_host PRIVATE "${CMAKE_SOURCE_DIR}/include")
 3. **Coding**: delegate to @developer to write the C implementations. Coding should include:
   - Generate host control code, including *FUSE* management, *Module* loading and calling sequence, post processing after each *Module* step. Teardown after everything is done, if the task does not require continuously running.
   - Generate WASM module(s), that implements the core functionalities required for the task.
-  - Generate JSON policy, with fields matches the *Module* policy defintion. In build system, use json to binary convertion script for converting the policy to execution ready binary. If such script doesn't exist, ask @scripter to create one.
+  - Generate JSON policy, with fields matching the *Module* policy definition. In the build system, use the `gen_app_config.py` script to convert the policy to an execution-ready binary. If additional scripting is needed, ask @scripter to create it.
   - Structure as separate CMake projects that links FUSE library.
   - Once done, proceed to **Security Audit**.
 4. **Security Audit**

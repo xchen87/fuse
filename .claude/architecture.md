@@ -3,13 +3,13 @@
 ## System Topology
 - The system follows a "Strict Air-Gap" model where a *Module* is physically and logically isolated from other *Modules* and the *Host*. *Module* can only communicate with outside through API calls that *FUSE* provides, documented in @module_api_spec.md.
 - *Host* manages *FUSE* and *Module* through APIs provided by *FUSE*, documented in `@host_api_spec.md`.
-- *Module* calls to *FUSE* will be handled APIs defined in `@module_api_spec.md`. *FUSE* will check all module calls against *Policy* 
+- *Module* calls to *FUSE* will be handled by APIs defined in `@module_api_spec.md`. *FUSE* will check all module calls against *Policy*.
 - *FUSE* monitor all loaded *Module*, log critical issues, and report to *Host* for critical failures.
 - mermaid diagram for the topology:
 ```mermaid
 erDiagram
     *Host* ||--|| *FUSE*: host_api_spec
-    *Host* ||--|{ *Hardwarwe*: access
+    *Host* ||--|{ *Hardware*: access
     *FUSE* {
         entity security_log
         entity module_policy_checker
@@ -34,6 +34,7 @@ Hardware APIs are organized into compile-time-conditional groups. Each group liv
 | Timer | `core/timer/` | `FUSE_HAL_ENABLE_TIMER` | `FUSE_CAP_TIMER` |
 | Camera | `core/camera/` | `FUSE_HAL_ENABLE_CAMERA` | `FUSE_CAP_CAMERA` |
 | Log | `core/log/` | *(always compiled)* | `FUSE_CAP_LOG` |
+| Event | `core/event/` | *(always compiled)* | `FUSE_CAP_EVENT_POST` |
 
 **Compile-time selection**: `FUSE_HAL_ENABLE_*` flags are set from `app_config.json` via
 `tools/gen_app_config.py` → `fuse_hal_flags.cmake` → `target_compile_definitions(fuse PUBLIC ...)`.
@@ -50,7 +51,7 @@ after `wasm_runtime_full_init()`. The log group is always registered uncondition
 - Memory Isolation: *Module* is restricted to its own Linear Memory. *FUSE* must validate all incoming memory access against *Policy*
 - No Dynamic Allocation: *module_api_spec* shall not trigger malloc/free. All data transfers must use pre-allocated buffers.
 - Capacity Bitmask: every *Module* is assigned a bitmask in *Policy* at loading time. *FUSE* checks this mask before executing module_api functions for hardware accesses.
-- Security Logging: any out-of bound access of an unauthorized module_api calls, *FUSE* shall immediately trap the module instance and log a security violation to the security log.
+- Security Logging: any out-of-bounds access or unauthorized module API call causes *FUSE* to immediately trap the module instance and log a security violation.
 
 ## CPU Quota Design
 WAMR's `wasm_runtime_set_instruction_count_limit()` only works in **interpreter mode**, not AOT. FUSE uses **time-based quota** instead:

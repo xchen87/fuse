@@ -6,7 +6,9 @@
 
 FUSE is a deterministic edge FaaS runtime built for constrained and safety-critical systems, with space and satellite applications as a primary target. Built on [WAMR](https://github.com/bytecodealliance/wasm-micro-runtime), it provides isolated, policy-bounded sandboxes with predictable scheduling and resource consumption — suitable for RTOS environments, bare-metal systems, and on-board computers.
 
-> **Early-stage project** — APIs and interfaces are evolving rapidly. Frequent breaking changes should be expected. Feedback and contributions of any kind are very welcome.
+> **Early-stage Project** — APIs and interfaces are evolving rapidly. Frequent breaking changes should be expected. Feedback and contributions of any kind are very welcome.
+>
+> **Extra Reading** — Read [FUSE Runtime](https://xinch.substack.com/p/fuse-runtime-for-edge-faas) about the motivations, goals, architectures, and agent swarm workflows in detail.
 
 ## Key Properties
 
@@ -43,7 +45,19 @@ Modules communicate with the outside world exclusively through FUSE's policy-che
 
 ## Policy Model
 
-Every module is governed by a policy that specifies:
+Every module is governed by a policy that governs what a module is allowed to do. Full security posture of a deployment can be determined by reading policy alone.
+```json
+"policy": {
+    "capabilities": ["TIMER", "CAMERA", "LOG"],
+    "memory_pages_max": 62,
+    "stack_size": 8192,
+    "heap_size": 262144,
+    "cpu_quota_us": 1000,
+    "step_interval_us": 10000000,
+    "activation_mask": ["INTERVAL"],
+    "event_subscribe": 0
+}
+```
 
 | Field | Description |
 |---|---|

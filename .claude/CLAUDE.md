@@ -2,19 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Session Startup Check
-**At the start of every session, before doing any other work**, run this check:
-```bash
-test -f wasm-micro-runtime/wamr-compiler/build/wamrc && echo "wamrc OK" || echo "wamrc MISSING"
-```
-- If **MISSING**: immediately notify the user with this message before proceeding:
-  > **wamrc is not built.** Unit tests that execute WASM modules will be skipped, and demo AOT binaries cannot be compiled. To build it (one-time, ~45 min):
-  > ```bash
-  > cd wasm-micro-runtime/wamr-compiler && ./build_llvm.sh --arch X86
-  > mkdir -p build && cd build && cmake .. && make -j$(nproc)
-  > ```
-- If **OK**: proceed silently — do not mention wamrc to the user.
-
 # FUSE runtime (Flexible Universal Secure Edge Runtime)
 **NOTE**: Always update `.claude/CLAUDE.md`, never create a root `CLAUDE.md`
 **Goals:** Space grade WAMR(Wasm-micro-runtime) based runtime that provide secure sandboxes for application modules, with review-friendly policies
@@ -22,19 +9,18 @@ test -f wasm-micro-runtime/wamr-compiler/build/wamrc && echo "wamrc OK" || echo 
 ## Terminology
 **Terminologies defined here apply to all claude configuration markdown files**
 - *WAMR* (Wasm-micro-runtime): backbone library that *FUSE* will be built upon, with WAMR's AOT mode.
-- *Host*: hosting environment that *FUSE* will run in. for example satellite operator's RTOS, or baremetal. In UnitTest, it'll be x86 linux.
+- *Host*: hosting environment that *FUSE* will run in. Includes Host OS, and hardware capabilities.
 - *FUSE*: our core library that provides secure sandboxes for *Module*, run as a host process
 - *Module*: applications that are compiled into wasm binary, which *FUSE* can load and execute under constraints defined in *Policy*.
 - *Policy*: defines security, memory and system access bounds of a *Module*. It's expressed as a C structure in *FUSE*. After loading a *Module*, *FUSE* guarantees *Module* operates within bounds defined by *Policy*.
 
 ## Mission Context
 A WAMR(wasm-micro-runtime) based, highly secure and flexible edge runtime library
-- WAMR configuration: Enable AOT and integrate FUSE in AOT mode. disable JIT, disable interpretor, disable libc.
+- WAMR configuration: Enable AOT and integrate FUSE in AOT mode. Disable JIT, disable interpreter, disable libc.
 - Language: C, with google c++ style guide as the coding style standard wherever applicable to C.
 - Build system: cmake
 - Unit Testing framework: GoogleTest, with gMock for *Host* side hardware access implementations in testing
 - Support *Policy* of each *Module* as a review-friendly json format.
-- Claude code will be running inside a docker container, which is spawn from the image built from docker/Dockerfile.
 
 ## Critical Docs
 - Technical Architecture: @architecture.md
@@ -45,7 +31,7 @@ A WAMR(wasm-micro-runtime) based, highly secure and flexible edge runtime librar
 - Use `@developer` for all C code implementation.
 - Use `@sentinel` for all mandatory security audits of all C code.
 - Use `@validator` to generate test cases for all C coding blocks.
-- Use `@scripter` to generate any helper scripts, such as policy json to binary convertion.
+- Use `@scripter` to generate any helper scripts, such as policy JSON to binary conversion.
 - Follow the workflow defined in `@feature_addition.md` for how and when each agent should act when adding new functions for *FUSE* library.
 - Follow the workflow defined in `@application_demo.md` for how and when each agent should act when adding new application demos.
 
@@ -62,12 +48,16 @@ A WAMR(wasm-micro-runtime) based, highly secure and flexible edge runtime librar
 - `./tools/`: contains scripts that @scripter may use and keep
   - `./tools/policy_to_bin.py`: standalone policy JSON → 32-byte binary converter
   - `./tools/gen_app_config.py`: app_config.json → C header + CMake flags + policy binaries
+- `./platform/`: host platform HAL implementations
+  - `./platform/platform.h`: common platform interface (timestamp, quota timer, sleep)
+  - `./platform/linux/`: Linux implementation (`clock_gettime`, `SIGALRM`/`setitimer`)
+  - `./platform/freertos/`: FreeRTOS implementation (`xTaskGetTickCount`, `xTimerCreate`)
 - `./wasm-micro-runtime/`: submodule that links to WAMR git repo, as project backbone
 - `./CMakeLists.txt`: main cmake build entry
-- `./build.py`: main build command entry to initiate compile and testings
+- `./build.py`: main build command entry to initiate compile and testing
 
 ## Standard Operating Procedures
-- **Adding new features or implemeting APIs**: Follow the `@feature_addition.md` for the workflow
+- **Adding new features or implementing APIs**: Follow the `@feature_addition.md` for the workflow
 - **Adding new application demos**: Follow the `@application_demo.md` for the workflow
 - **Memory Policy**: No dynamic allocation
 - **Audit Requirement**: All code must receive a PASS from `@sentinel`
@@ -76,6 +66,9 @@ A WAMR(wasm-micro-runtime) based, highly secure and flexible edge runtime librar
 ```bash
 # Clean build — all HAL groups enabled by default (suitable for tests)
 ./build.py -c
+
+# Build targeting FreeRTOS platform (POSIX simulator on x86 for CI)
+./build.py -c -p freertos
 
 # Build a demo standalone (each demo drives its own fuse core compilation)
 cd demos/camera_compress && ./build.sh          # Release
@@ -102,7 +95,7 @@ wamrc -o module.aot module.wasm
 ```
 GoogleTest fetches automatically via CMake's `FetchContent` on first build. The test binary is `build/tests/fuse_test`.
 
-**Note:** `wamrc` is not pre-installed. Build it once from the WAMR submodule (requires building LLVM first, ~45 min):
+**Note:** `wamrc` is not pre-installed. Build it once from the WAMR submodule (requires building LLVM first):
 ```bash
 # Step 1: build LLVM (one-time, ~45 min)
 cd wasm-micro-runtime/wamr-compiler && ./build_llvm.sh --arch X86
