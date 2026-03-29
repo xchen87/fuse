@@ -19,6 +19,9 @@ extern unsigned long long camera_last_frame(void *buf, unsigned int max_len);
 __attribute__((import_module("env"), import_name("module_log_event")))
 extern void module_log_event(const char *ptr, unsigned int len, unsigned int level);
 
+__attribute__((import_module("env"), import_name("fuse_event_post")))
+extern void fuse_event_post(unsigned int event_id);
+
 /* Required export: */
 __attribute__((export_name("module_step"))) void module_step(void) { /* no infinite loops */ }
 /* Optional exports: */
@@ -52,3 +55,12 @@ Use basic C integer arithmetic and array indexing freely. Do NOT call libc I/O (
 - `ptr`: source buffer in module linear memory; `len`: byte count (not NUL-terminated)
 - `level`: 0=DEBUG, 1=INFO, 2=FATAL
 - Messages longer than `FUSE_LOG_MSG_MAX` (128) are truncated
+
+## Event API
+#### `void fuse_event_post(uint32_t event_id)`
+- Requires: `FUSE_CAP_EVENT_POST` (0x10)
+- `event_id`: event identifier, 0-31 (must match an ID subscribed by at least one other module)
+- Sets the event bit in the latch of every RUNNING module whose `policy.event_subscribe` includes `event_id`
+- Calling with `event_id >= 32` triggers a policy violation trap on the calling module
+- Calling without `FUSE_CAP_EVENT_POST` in policy triggers a policy violation trap
+- Use this to signal downstream pipeline stages (e.g. producer module triggers consumer module)

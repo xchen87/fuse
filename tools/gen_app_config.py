@@ -5,7 +5,7 @@ gen_app_config.py — Generate FUSE application configuration artifacts.
 Reads an app_config.json file and produces:
   1. fuse_app_config.h      — C header with all application and per-module constants
   2. fuse_hal_flags.cmake   — CMake set() variables for enabled HAL groups
-  3. <module>_policy.bin    — 24-byte fuse_policy_t binary per module (little-endian)
+  3. <module>_policy.bin    — 32-byte fuse_policy_t binary per module (little-endian)
 
 Usage:
     python3 gen_app_config.py --input app_config.json --output-dir <dir>
@@ -34,13 +34,21 @@ CAP_BITS = {
     "TIMER":       0x02,
     "CAMERA":      0x04,
     "LOG":         0x08,
+    "EVENT_POST":  0x10,
 }
 
-# Capability → required hal_group (LOG has no hal_group requirement)
+# Capability → required hal_group (LOG and EVENT_POST have no hal_group requirement)
 CAP_TO_HAL_GROUP = {
     "TEMP_SENSOR": "temp_sensor",
     "TIMER":       "timer",
     "CAMERA":      "camera",
+}
+
+# Activation mode string → bit value
+ACTIVATION_BITS = {
+    "INTERVAL": 0x01,
+    "EVENT":    0x02,
+    "MANUAL":   0x04,
 }
 
 FUSE_MAX_MODULES = 8
@@ -79,6 +87,18 @@ def validate(config: dict, input_path: str) -> None:
     if not isinstance(max_modules, int) or max_modules < 1 or max_modules > FUSE_MAX_MODULES:
         err(f"application.max_modules must be 1..{FUSE_MAX_MODULES}, got {max_modules}")
 
+    # application.events — optional dict of event name → bit index (0-31)
+    events = app.get("events", {})
+    if not isinstance(events, dict):
+        err("application.events must be a dict of name -> bit_index (0-31)")
+    seen_event_bits = set()
+    for ev_name, ev_bit in events.items():
+        if not isinstance(ev_bit, int) or ev_bit < 0 or ev_bit > 31:
+            err(f"application.events['{ev_name}']: bit index must be 0-31, got {ev_bit}")
+        if ev_bit in seen_event_bits:
+            err(f"application.events['{ev_name}']: bit index {ev_bit} is already used by another event")
+        seen_event_bits.add(ev_bit)
+
     # modules list — optional; omit for pure dynamic deployments
     if "modules" not in config:
         return  # platform-only config is valid; no module entries to validate
@@ -108,7 +128,7 @@ def validate(config: dict, input_path: str) -> None:
             if cap not in CAP_BITS:
                 err(f"module '{name}': unknown capability '{cap}'; "
                     f"valid: {list(CAP_BITS)}")
-            # LOG is always valid; other caps require the hal_group to be present
+            # LOG and EVENT_POST are always valid; other caps require the hal_group to be present
             if cap in CAP_TO_HAL_GROUP:
                 required_group = CAP_TO_HAL_GROUP[cap]
                 if required_group not in hal_group_set:
@@ -123,6 +143,36 @@ def validate(config: dict, input_path: str) -> None:
             if not isinstance(policy[field], int) or policy[field] < 0:
                 err(f"module '{name}': policy.{field} must be a non-negative integer")
 
+        # activation — optional list of strings; default ["INTERVAL"]
+        activation_list = policy.get("activation", ["INTERVAL"])
+        if not isinstance(activation_list, list):
+            err(f"module '{name}': policy.activation must be a list of strings")
+        for act in activation_list:
+            if act not in ACTIVATION_BITS:
+                err(f"module '{name}': unknown activation mode '{act}'; "
+                    f"valid: {list(ACTIVATION_BITS)}")
+
+        # event_subscribe — optional list of event names or integers; default []
+        event_sub = policy.get("event_subscribe", [])
+        if not isinstance(event_sub, list):
+            err(f"module '{name}': policy.event_subscribe must be a list")
+        for ev in event_sub:
+            if isinstance(ev, int):
+                if ev < 0 or ev > 31:
+                    err(f"module '{name}': event_subscribe integer {ev} must be 0-31")
+            elif isinstance(ev, str):
+                if ev not in events:
+                    err(f"module '{name}': event_subscribe references unknown event '{ev}'; "
+                        f"defined events: {list(events)}")
+            else:
+                err(f"module '{name}': event_subscribe entries must be strings or integers")
+
+        # Warn if EVENT activation is set but event_subscribe is empty
+        if "EVENT" in activation_list and len(event_sub) == 0:
+            print(f"WARNING [{input_path}]: module '{name}' has FUSE_ACTIVATION_EVENT "
+                  f"but no event_subscribe entries — event-triggered steps will never fire",
+                  file=sys.stderr)
+
 
 # ---------------------------------------------------------------------------
 # Code generation helpers
@@ -135,6 +185,25 @@ def caps_to_bitmask(caps: list) -> int:
     return result
 
 
+def activation_to_bitmask(activation_list: list) -> int:
+    result = 0
+    for act in activation_list:
+        result |= ACTIVATION_BITS[act]
+    return result
+
+
+def event_subscribe_to_bitmask(event_sub: list, events_map: dict) -> int:
+    """Convert list of event names/integers to a bitmask."""
+    result = 0
+    for ev in event_sub:
+        if isinstance(ev, int):
+            result |= (1 << ev)
+        else:
+            # ev is a string name; look up bit index from events_map
+            result |= (1 << events_map[ev])
+    return result
+
+
 def module_macro_prefix(name: str) -> str:
     """Convert module name to uppercase C macro prefix."""
     return "FUSE_POLICY_" + re.sub(r"[^A-Za-z0-9]", "_", name).upper() + "_"
@@ -144,6 +213,7 @@ def generate_header(config: dict, input_path: str) -> str:
     app = config["application"]
     modules = config.get("modules", [])
     hal_groups = app["hal_groups"]
+    events = app.get("events", {})
 
     lines = [
         "/* Auto-generated from app_config.json by tools/gen_app_config.py — DO NOT EDIT */",
@@ -163,6 +233,15 @@ def generate_header(config: dict, input_path: str) -> str:
         flag = HAL_GROUP_TO_FLAG[group]
         lines.append(f"#define {flag}  1")
 
+    if events:
+        lines += [
+            "",
+            "/* ---- Application-defined events ---- */",
+        ]
+        for ev_name, ev_bit in sorted(events.items(), key=lambda x: x[1]):
+            macro_name = "FUSE_EVENT_" + re.sub(r"[^A-Za-z0-9]", "_", ev_name).upper()
+            lines.append(f"#define {macro_name}  {ev_bit}u")
+
     for mod in modules:
         name = mod["name"]
         policy = mod["policy"]
@@ -170,6 +249,13 @@ def generate_header(config: dict, input_path: str) -> str:
         bitmask = caps_to_bitmask(caps)
         cap_comment = " | ".join(caps) + f" = 0x{bitmask:02X}"
         prefix = module_macro_prefix(name)
+
+        activation_list = policy.get("activation", ["INTERVAL"])
+        activation_mask = activation_to_bitmask(activation_list)
+        act_comment = " | ".join(activation_list) + f" = 0x{activation_mask:02X}"
+
+        event_sub = policy.get("event_subscribe", [])
+        event_sub_mask = event_subscribe_to_bitmask(event_sub, events)
 
         lines += [
             "",
@@ -181,6 +267,9 @@ def generate_header(config: dict, input_path: str) -> str:
             f"#define {prefix}HEAP_SIZE         {policy['heap_size']}U",
             f"#define {prefix}CPU_QUOTA_US      {policy['cpu_quota_us']}U",
             f"#define {prefix}STEP_INTERVAL_US  {policy['step_interval_us']}U",
+            f"/* activation: {act_comment} */",
+            f"#define {prefix}ACTIVATION_MASK   0x{activation_mask:02X}U",
+            f"#define {prefix}EVENT_SUBSCRIBE   0x{event_sub_mask:08X}U",
             f'#define {prefix}BINARY            "{mod["binary"]}"',
         ]
 
@@ -198,18 +287,24 @@ def generate_cmake_flags(config: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def generate_policy_bin(policy: dict) -> bytes:
-    """Pack fuse_policy_t as 6 × little-endian uint32_t (24 bytes)."""
+def generate_policy_bin(policy: dict, events_map: dict) -> bytes:
+    """Pack fuse_policy_t as 8 x little-endian uint32_t (32 bytes)."""
     caps = policy["capabilities"]
     bitmask = caps_to_bitmask(caps)
+    activation_list = policy.get("activation", ["INTERVAL"])
+    activation_mask = activation_to_bitmask(activation_list)
+    event_sub = policy.get("event_subscribe", [])
+    event_sub_mask = event_subscribe_to_bitmask(event_sub, events_map)
     return struct.pack(
-        "<6I",
+        "<8I",
         bitmask,
         policy["memory_pages_max"],
         policy["stack_size"],
         policy["heap_size"],
         policy["cpu_quota_us"],
         policy["step_interval_us"],
+        activation_mask,
+        event_sub_mask,
     )
 
 
@@ -254,11 +349,12 @@ def main() -> None:
     print(f"Generated: {cmake_path}")
 
     # 3. Per-module policy binaries (only when modules section is present)
+    events_map = config["application"].get("events", {})
     modules = config.get("modules", [])
     for mod in modules:
         bin_name = f"{mod['name']}_policy.bin"
         bin_path = output_dir / bin_name
-        bin_path.write_bytes(generate_policy_bin(mod["policy"]))
+        bin_path.write_bytes(generate_policy_bin(mod["policy"], events_map))
         print(f"Generated: {bin_path}")
 
     print(f"\nSuccess: {2 + len(modules)} files written to {output_dir}")

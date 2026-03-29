@@ -17,6 +17,9 @@
 #include <stdio.h>
 #include <string.h>
 
+_Static_assert(sizeof(fuse_policy_t) == 32u,
+               "fuse_policy_t layout changed — update policy_to_bin.py, gen_app_config.py, and this file");
+
 /* ---------------------------------------------------------------------------
  * fuse_policy_check_cap
  *
@@ -72,8 +75,8 @@ void fuse_policy_violation(fuse_module_desc_t *desc,
 /* ---------------------------------------------------------------------------
  * fuse_policy_from_bin
  *
- * Deserialises a 24-byte little-endian policy binary into a fuse_policy_t.
- * The wire format is 6 x uint32_t little-endian, matching the in-memory
+ * Deserialises a 32-byte little-endian policy binary into a fuse_policy_t.
+ * The wire format is 8 x uint32_t little-endian, matching the in-memory
  * layout of fuse_policy_t on x86 and all other little-endian WAMR targets.
  * On a big-endian host this function would need field-by-field byte swapping.
  * --------------------------------------------------------------------------- */
@@ -86,7 +89,7 @@ fuse_stat_t fuse_policy_from_bin(const uint8_t *buf, uint32_t len,
     if (len != (uint32_t)sizeof(fuse_policy_t)) {
         return FUSE_ERR_INVALID_ARG;
     }
-    /* Wire format is 6 x little-endian uint32_t — matches fuse_policy_t
+    /* Wire format is 8 x little-endian uint32_t — matches fuse_policy_t
      * in-memory layout on x86 (and all WAMR-supported little-endian targets).
      * On a big-endian host this function would need field-by-field byte swapping. */
     (void)memcpy(out_policy, buf, sizeof(fuse_policy_t));

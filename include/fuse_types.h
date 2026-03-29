@@ -58,6 +58,24 @@ typedef enum {
 #define FUSE_CAP_TIMER        (1u << 1u)
 #define FUSE_CAP_CAMERA       (1u << 2u)
 #define FUSE_CAP_LOG          (1u << 3u)
+#define FUSE_CAP_EVENT_POST   (1u << 4u)
+
+/* ---------------------------------------------------------------------------
+ * Activation mode bitmask — controls how fuse_tick() triggers a module.
+ *
+ * FUSE_ACTIVATION_INTERVAL : fuse_tick() triggers based on step_interval_us
+ *                            (same as the pre-activation legacy behaviour).
+ * FUSE_ACTIVATION_EVENT    : fuse_tick() triggers when subscribed events are
+ *                            pending in the module's event latch.
+ * FUSE_ACTIVATION_MANUAL   : fuse_tick() skips this module entirely; the host
+ *                            drives it exclusively via fuse_module_run_step().
+ *
+ * Flags may be OR-combined.  activation_mask == 0 is treated as
+ * FUSE_ACTIVATION_INTERVAL for backward compatibility.
+ * --------------------------------------------------------------------------- */
+#define FUSE_ACTIVATION_INTERVAL  (1u << 0u)
+#define FUSE_ACTIVATION_EVENT     (1u << 1u)
+#define FUSE_ACTIVATION_MANUAL    (1u << 2u)
 
 /* ---------------------------------------------------------------------------
  * Module policy
@@ -70,6 +88,9 @@ typedef enum {
  *                    (0 = unlimited)
  * step_interval_us : minimum microseconds between consecutive steps
  *                    (0 = no constraint)
+ * activation_mask  : FUSE_ACTIVATION_* bitmask; 0 treated as INTERVAL (compat)
+ * event_subscribe  : bitmask of event IDs (bits 0–31) that trigger this module
+ *                    when FUSE_ACTIVATION_EVENT is set in activation_mask
  * --------------------------------------------------------------------------- */
 typedef struct {
     uint32_t capabilities;
@@ -78,7 +99,9 @@ typedef struct {
     uint32_t heap_size;
     uint32_t cpu_quota_us;
     uint32_t step_interval_us;  /* min µs between steps; 0 = no constraint */
-} fuse_policy_t;
+    uint32_t activation_mask;   /* FUSE_ACTIVATION_* bitmask; 0 = INTERVAL (compat) */
+    uint32_t event_subscribe;   /* bitmask of event IDs (0-31) that trigger this module */
+} fuse_policy_t;  /* 32 bytes, 8 x uint32_t little-endian */
 
 /* ---------------------------------------------------------------------------
  * Module identifier

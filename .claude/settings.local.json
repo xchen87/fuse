@@ -19,7 +19,12 @@
       "Bash(python3 /home/xinchen/code/fuse/tools/gen_app_config.py --input /home/xinchen/code/fuse/demos/camera_compress/app_config.json --output-dir /tmp/fuse_gen_test)",
       "Read(//tmp/fuse_gen_test/**)",
       "Bash(xxd /tmp/fuse_gen_test/camera_compress_policy.bin)",
-      "Bash(ctest)"
+      "Bash(ctest)",
+      "Bash(./build.sh)",
+      "Bash(python3:*)",
+      "Read(//tmp/fuse_test_gen/**)",
+      "Bash(xxd /tmp/fuse_test_gen/camera_compress_policy.bin)",
+      "Bash(cmake --build . --config Release)"
     ]
   }
 }

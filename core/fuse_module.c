@@ -10,9 +10,20 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdatomic.h>
 
 /* Error-buffer size for WAMR API calls. */
 #define WAMR_ERR_BUF_SIZE  (128u)
+
+/* Returns true when a monotonic timestamp is available from the HAL. */
+static inline bool timer_hal_available(void)
+{
+#ifdef FUSE_HAL_ENABLE_TIMER
+    return g_ctx.hal.timer.get_timestamp != NULL;
+#else
+    return false;
+#endif
+}
 
 /* ---------------------------------------------------------------------------
  * Internal helper: find a descriptor by module ID.
@@ -187,6 +198,7 @@ fuse_stat_t fuse_module_load(const uint8_t *module_buf, uint32_t module_size,
     slot->id          = (fuse_module_id_t)i;
     slot->state       = FUSE_MODULE_STATE_LOADED;
     slot->init_called = false;
+    __atomic_thread_fence(__ATOMIC_RELEASE);
     slot->in_use      = true;
 
     *out_id = slot->id;
@@ -361,15 +373,94 @@ fuse_stat_t fuse_module_unload(fuse_module_id_t id)
 }
 
 /* ---------------------------------------------------------------------------
+ * run_step_impl — shared step executor.
+ *
+ * Receives a non-NULL desc that is already verified to be in RUNNING state.
+ * bypass_interval: when true, skip the step_interval_us guard.
+ *   Used by fuse_tick() for event-triggered steps so that events always
+ *   fire regardless of the polling rate.
+ * --------------------------------------------------------------------------- */
+static fuse_stat_t run_step_impl(fuse_module_desc_t *desc, bool bypass_interval)
+{
+    bool        call_ok;
+    const char *exc;
+    char        log_msg[FUSE_LOG_MSG_MAX];
+    uint64_t    step_start_us;
+
+    /* -- Check step interval (skipped for event-triggered calls) ----------- */
+    step_start_us = 0u;
+    if (timer_hal_available()) {
+        step_start_us = g_ctx.hal.timer.get_timestamp();
+    }
+    if (!bypass_interval &&
+        (desc->policy.step_interval_us > 0u) &&
+        desc->step_ever_run &&
+        timer_hal_available()) {
+        /* Guard against unsigned underflow when the clock is reset or the
+         * HAL is swapped (step_start_us < last_step_at_us).  In that case
+         * we skip enforcement rather than wrapping to a huge elapsed value
+         * that would spuriously bypass the rate limit. */
+        if ((step_start_us >= desc->last_step_at_us) &&
+            ((step_start_us - desc->last_step_at_us) <
+             (uint64_t)desc->policy.step_interval_us)) {
+            return FUSE_ERR_INTERVAL_NOT_ELAPSED;
+        }
+    }
+
+    /* -- Arm quota timer if configured ------------------------------------ */
+    if ((desc->policy.cpu_quota_us > 0u) &&
+        (g_ctx.hal.quota_arm != NULL)) {
+        g_ctx.hal.quota_arm(desc->id, desc->policy.cpu_quota_us);
+    }
+
+    /* -- Execute one step ------------------------------------------------- */
+    call_ok = wasm_runtime_call_wasm(desc->exec_env, desc->fn_step, 0u, NULL);
+
+    /* -- Cancel quota timer (normal return path) -------------------------- */
+    if ((desc->policy.cpu_quota_us > 0u) &&
+        (g_ctx.hal.quota_cancel != NULL)) {
+        g_ctx.hal.quota_cancel(desc->id);
+    }
+
+    /* Fence ensures the ISR's state write (QUOTA_EXCEEDED) is visible before
+     * we read desc->state below, preventing reordering on weakly-ordered
+     * architectures where the signal handler and main thread may share a core. */
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+
+    /* -- Handle failure --------------------------------------------------- */
+    if (!call_ok) {
+        /* Check if the failure was due to quota expiry (ISR already set
+         * state to QUOTA_EXCEEDED and called wasm_runtime_terminate()). */
+        if (desc->state == FUSE_MODULE_STATE_QUOTA_EXCEEDED) {
+            (void)snprintf(log_msg, sizeof(log_msg),
+                           "module %u quota exceeded", (unsigned int)desc->id);
+            fuse_log_write(&g_ctx.log_ctx, desc->id, 2u, log_msg);
+            return FUSE_ERR_QUOTA_EXCEEDED;
+        }
+
+        /* Otherwise it is a WASM trap. */
+        exc = wasm_runtime_get_exception(desc->module_inst);
+        (void)snprintf(log_msg, sizeof(log_msg),
+                       "module %u trap: %.80s",
+                       (unsigned int)desc->id,
+                       (exc != NULL) ? exc : "unknown");
+        fuse_log_write(&g_ctx.log_ctx, desc->id, 2u, log_msg);
+        desc->state = FUSE_MODULE_STATE_TRAPPED;
+        return FUSE_ERR_MODULE_TRAP;
+    }
+
+    /* -- Record successful step start time -------------------------------- */
+    desc->last_step_at_us = step_start_us;
+    desc->step_ever_run   = true;
+    return FUSE_SUCCESS;
+}
+
+/* ---------------------------------------------------------------------------
  * fuse_module_run_step
  * --------------------------------------------------------------------------- */
 fuse_stat_t fuse_module_run_step(fuse_module_id_t id)
 {
     fuse_module_desc_t *desc;
-    bool                call_ok;
-    const char         *exc;
-    char                log_msg[FUSE_LOG_MSG_MAX];
-    uint64_t            step_start_us;
 
     if (!g_ctx.initialized) {
         return FUSE_ERR_NOT_INITIALIZED;
@@ -388,76 +479,7 @@ fuse_stat_t fuse_module_run_step(fuse_module_id_t id)
         return FUSE_ERR_INVALID_ARG;
     }
 
-    /* -- Check step interval -------------------------------------------- */
-    step_start_us = 0u;
-#ifdef FUSE_HAL_ENABLE_TIMER
-    if (g_ctx.hal.timer.get_timestamp != NULL) {
-        step_start_us = g_ctx.hal.timer.get_timestamp();
-    }
-#endif
-    if ((desc->policy.step_interval_us > 0u) && desc->step_ever_run &&
-#ifdef FUSE_HAL_ENABLE_TIMER
-        (g_ctx.hal.timer.get_timestamp != NULL)) {
-#else
-        false) {
-#endif
-        /* Guard against unsigned underflow when the clock is reset or the
-         * HAL is swapped (step_start_us < last_step_at_us).  In that case
-         * we skip enforcement rather than wrapping to a huge elapsed value
-         * that would spuriously bypass the rate limit. */
-        if ((step_start_us >= desc->last_step_at_us) &&
-            ((step_start_us - desc->last_step_at_us) <
-             (uint64_t)desc->policy.step_interval_us)) {
-            return FUSE_ERR_INTERVAL_NOT_ELAPSED;
-        }
-    }
-
-    /* -- Arm quota timer if configured ------------------------------------ */
-    if ((desc->policy.cpu_quota_us > 0u) &&
-        (g_ctx.hal.quota_arm != NULL)) {
-        g_ctx.hal.quota_arm(id, desc->policy.cpu_quota_us);
-    }
-
-    /* -- Execute one step ------------------------------------------------- */
-    call_ok = wasm_runtime_call_wasm(desc->exec_env, desc->fn_step, 0u, NULL);
-
-    /* -- Cancel quota timer (normal return path) -------------------------- */
-    if ((desc->policy.cpu_quota_us > 0u) &&
-        (g_ctx.hal.quota_cancel != NULL)) {
-        g_ctx.hal.quota_cancel(id);
-    }
-
-    /* Fence ensures the ISR's state write (QUOTA_EXCEEDED) is visible before
-     * we read desc->state below, preventing reordering on weakly-ordered
-     * architectures where the signal handler and main thread may share a core. */
-    __atomic_thread_fence(__ATOMIC_SEQ_CST);
-
-    /* -- Handle failure --------------------------------------------------- */
-    if (!call_ok) {
-        /* Check if the failure was due to quota expiry (ISR already set
-         * state to QUOTA_EXCEEDED and called wasm_runtime_terminate()). */
-        if (desc->state == FUSE_MODULE_STATE_QUOTA_EXCEEDED) {
-            (void)snprintf(log_msg, sizeof(log_msg),
-                           "module %u quota exceeded", (unsigned int)id);
-            fuse_log_write(&g_ctx.log_ctx, id, 2u, log_msg);
-            return FUSE_ERR_QUOTA_EXCEEDED;
-        }
-
-        /* Otherwise it is a WASM trap. */
-        exc = wasm_runtime_get_exception(desc->module_inst);
-        (void)snprintf(log_msg, sizeof(log_msg),
-                       "module %u trap: %.80s",
-                       (unsigned int)id,
-                       (exc != NULL) ? exc : "unknown");
-        fuse_log_write(&g_ctx.log_ctx, id, 2u, log_msg);
-        desc->state = FUSE_MODULE_STATE_TRAPPED;
-        return FUSE_ERR_MODULE_TRAP;
-    }
-
-    /* -- Record successful step start time -------------------------------- */
-    desc->last_step_at_us = step_start_us;
-    desc->step_ever_run   = true;
-    return FUSE_SUCCESS;
+    return run_step_impl(desc, /*bypass_interval=*/false);
 }
 
 /* ---------------------------------------------------------------------------
@@ -468,10 +490,10 @@ uint32_t fuse_tick(void)
     uint32_t            i;
     uint32_t            ran_mask = 0u;
     fuse_module_desc_t *desc;
+    uint32_t            activation;
+    uint32_t            triggered;
     fuse_stat_t         rc;
 
-    /* Compile-time guard: the bitmask return type must be wide enough for all
-     * module IDs.  Raise this if FUSE_MAX_MODULES is ever increased past 32. */
     _Static_assert(FUSE_MAX_MODULES <= 32u,
                    "fuse_tick bitmask (uint32_t) too narrow for FUSE_MAX_MODULES");
 
@@ -487,13 +509,46 @@ uint32_t fuse_tick(void)
             continue;
         }
 
-        rc = fuse_module_run_step(desc->id);
-        if (rc == FUSE_SUCCESS) {
-            ran_mask |= ((uint32_t)1u << desc->id);
+        /* Resolve effective activation mode.
+         * activation_mask == 0 preserves legacy behaviour (interval-driven). */
+        activation = desc->policy.activation_mask;
+        if (activation == 0u) {
+            activation = FUSE_ACTIVATION_INTERVAL;
         }
-        /* FUSE_ERR_INTERVAL_NOT_ELAPSED: not yet due — expected, continue */
-        /* FUSE_ERR_QUOTA_EXCEEDED / FUSE_ERR_MODULE_TRAP: state already
-         * updated; continue to next module */
+
+        /* MANUAL: host drives this module directly; skip tick-driven execution. */
+        if (activation & FUSE_ACTIVATION_MANUAL) {
+            continue;
+        }
+
+        /* EVENT: check for pending subscribed events first (higher priority
+         * than interval so urgent signals are not delayed by rate limiting). */
+        if (activation & FUSE_ACTIVATION_EVENT) {
+            triggered = atomic_load_explicit(&desc->event_latch, memory_order_acquire) &
+                        desc->policy.event_subscribe;
+            if (triggered != 0u) {
+                rc = run_step_impl(desc, /*bypass_interval=*/true);
+                if (rc == FUSE_SUCCESS) {
+                    /* Clear only the events we decided on; any events posted
+                     * during the step remain set and will fire next tick. */
+                    atomic_fetch_and_explicit(&desc->event_latch, ~triggered, memory_order_acq_rel);
+                    ran_mask |= (1u << desc->id);
+                }
+                /* Whether the step succeeded or failed, do not fall through
+                 * to the interval check — at most one step per module per tick. */
+                continue;
+            }
+        }
+
+        /* INTERVAL: time-based trigger (also handles the legacy 0-mask path). */
+        if (activation & FUSE_ACTIVATION_INTERVAL) {
+            rc = run_step_impl(desc, /*bypass_interval=*/false);
+            if (rc == FUSE_SUCCESS) {
+                ran_mask |= (1u << desc->id);
+            }
+            /* FUSE_ERR_INTERVAL_NOT_ELAPSED: not yet due — expected, continue */
+            /* FUSE_ERR_QUOTA_EXCEEDED / FUSE_ERR_MODULE_TRAP: state updated */
+        }
     }
 
     return ran_mask;

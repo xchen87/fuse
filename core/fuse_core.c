@@ -86,7 +86,8 @@ fuse_stat_t fuse_init(void *module_memory, size_t module_memory_size,
 #ifdef FUSE_HAL_ENABLE_CAMERA
     fuse_hal_camera_register_natives();
 #endif
-    fuse_hal_log_register_natives();  /* log group is always registered */
+    fuse_hal_log_register_natives();    /* log group is always registered */
+    fuse_hal_event_register_natives();  /* event group is always registered */
 
     /* -- Initialise security-log ring buffer ------------------------------- */
     log_capacity = (uint32_t)(log_memory_size / sizeof(fuse_log_entry_t));

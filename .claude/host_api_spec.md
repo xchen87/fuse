@@ -35,9 +35,13 @@ typedef struct {
 buffer. It has no host hardware callback and does not appear in `fuse_hal_t`. Controlled only by
 `FUSE_CAP_LOG` in module policy.
 
+**Event group**: `fuse_event_post` is always registered with WAMR and routes to `fuse_post_event()`
+inside the FUSE core. It has no host hardware callback and does not appear in `fuse_hal_t`. Controlled
+by `FUSE_CAP_EVENT_POST` in module policy. Modules use it to signal downstream pipeline stages.
+
 **HAL group registration**: after `wasm_runtime_full_init()` in `fuse_init()`, each enabled group's
 native symbols are registered via `fuse_hal_<group>_register_natives()` (defined in `core/<group>/`).
-The log group is always registered unconditionally.
+The log and event groups are always registered unconditionally.
 
 **Initialization example** (timer + camera only):
 ```c
@@ -149,8 +153,8 @@ uint32_t fuse_tick(void);
 fuse_stat_t fuse_policy_from_bin(const uint8_t *buf, uint32_t len,
                                   fuse_policy_t *out_policy);
 ```
-- Deserialises a 24-byte little-endian policy binary (`*_policy.bin`) into a `fuse_policy_t`.
-- Wire format: 6 × uint32_t little-endian, matching `fuse_policy_t` in-memory layout on all WAMR-supported little-endian targets.
+- Deserialises a 32-byte little-endian policy binary (`*_policy.bin`) into a `fuse_policy_t`.
+- Wire format: 8 × uint32_t little-endian, matching `fuse_policy_t` in-memory layout on all WAMR-supported little-endian targets.
 - Use this for **dynamic module loading** when policy is delivered at runtime rather than compiled in.
 - Returns: `FUSE_SUCCESS`, `FUSE_ERR_INVALID_ARG` (NULL pointer or `len != sizeof(fuse_policy_t)`)
 
@@ -171,3 +175,27 @@ st = fuse_module_load(module_buf, module_size, &policy, &id);
 **app_config.json dual-mode**: `tools/gen_app_config.py` supports two forms:
 - **With `modules` section**: generates both `fuse_app_config.h` (compile-time macros) and per-module `*_policy.bin` files — use `FUSE_POLICY_*` macros for static deployments.
 - **Without `modules` section** (platform-only config): generates only `fuse_app_config.h` with pool sizes and HAL flags — modules are loaded fully dynamically at runtime via `fuse_policy_from_bin()`.
+
+### `fuse_post_event`
+```c
+fuse_stat_t fuse_post_event(uint32_t event_id);
+```
+- Sets the event bit in the event latch of every RUNNING module whose `policy.event_subscribe` mask includes `event_id`.
+- On the next `fuse_tick()` call any such module with `FUSE_ACTIVATION_EVENT` will execute one step.
+- ISR-safe: uses only `atomic_fetch_or` operations — no locks, no log writes, no WAMR calls.
+- Returns: `FUSE_SUCCESS`, `FUSE_ERR_INVALID_ARG` (event_id >= 32 or not initialised)
+
+**Event-chaining pattern** — a module can trigger a downstream pipeline stage:
+```c
+/* Module A (producer) — calls fuse_event_post via WASM native import */
+/* Host side — post an event directly from e.g. a camera frame DMA ISR  */
+fuse_post_event(FUSE_EVENT_CAMERA_FRAME_READY);  /* non-blocking, ISR-safe */
+```
+
+### `fuse_clear_event`
+```c
+fuse_stat_t fuse_clear_event(uint32_t event_id);
+```
+- Removes the event bit from every module's event latch.
+- Useful for draining stale events during shutdown or reset sequences.
+- Returns: `FUSE_SUCCESS`, `FUSE_ERR_INVALID_ARG` (event_id >= 32 or not initialised)

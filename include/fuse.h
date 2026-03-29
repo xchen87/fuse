@@ -242,21 +242,49 @@ void fuse_quota_expired(fuse_module_id_t module_id);
 uint32_t fuse_tick(void);
 
 /**
- * fuse_policy_from_bin — Deserialise a little-endian 24-byte policy binary
+ * fuse_policy_from_bin — Deserialise a little-endian 32-byte policy binary
  * into a fuse_policy_t.
  *
- * The wire format is 6 x uint32_t little-endian, as produced by
+ * The wire format is 8 x uint32_t little-endian, as produced by
  * tools/policy_to_bin.py and tools/gen_app_config.py.  Use this function
  * when a module's policy arrives at runtime (e.g. uploaded over a link)
  * rather than being compiled in via fuse_app_config.h macros.
  *
  * @param buf        Input buffer — must be at least sizeof(fuse_policy_t) bytes.
- * @param len        Buffer length; must equal sizeof(fuse_policy_t) (24).
+ * @param len        Buffer length; must equal sizeof(fuse_policy_t) (32).
  * @param out_policy Output policy struct (written on success only).
  * @returns FUSE_SUCCESS, FUSE_ERR_INVALID_ARG
  */
 fuse_stat_t fuse_policy_from_bin(const uint8_t *buf, uint32_t len,
                                   fuse_policy_t *out_policy);
+
+/**
+ * fuse_post_event — Signal an event to all subscribed modules.
+ *
+ * Sets the event bit in the event latch of every RUNNING module whose
+ * policy.event_subscribe mask includes event_id.  On the next fuse_tick()
+ * call any such module with FUSE_ACTIVATION_EVENT will execute one step.
+ *
+ * ISR-safe: uses only atomic fetch-or operations.
+ *
+ * @param event_id  Event identifier, 0-31.
+ * @return FUSE_SUCCESS, FUSE_ERR_NOT_INITIALIZED (runtime not initialised),
+ *         FUSE_ERR_INVALID_ARG (event_id >= 32).
+ */
+fuse_stat_t fuse_post_event(uint32_t event_id);
+
+/**
+ * fuse_clear_event — Clear all module event latches for event_id.
+ *
+ * Removes the event bit from every module's event latch, preventing a
+ * pending event from triggering further steps.  Useful for draining stale
+ * events during shutdown or reset.
+ *
+ * @param event_id  Event identifier, 0-31.
+ * @return FUSE_SUCCESS, FUSE_ERR_NOT_INITIALIZED (runtime not initialised),
+ *         FUSE_ERR_INVALID_ARG (event_id >= 32).
+ */
+fuse_stat_t fuse_clear_event(uint32_t event_id);
 
 #ifdef __cplusplus
 }

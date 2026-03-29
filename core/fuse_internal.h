@@ -15,6 +15,37 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+/* C11 <stdatomic.h> uses _Atomic which is not valid in C++ mode under GCC.
+ * When compiled as C++, pull in <atomic> and map the C11 function-like macros
+ * to their std::atomic equivalents so that fuse_module_desc_t remains usable
+ * from C++ test translation units that include this header via fuse_test_helper.h. */
+#ifdef __cplusplus
+   /* C++ callers (test translation units) use <atomic> from the standard library.
+    * Provide inline wrappers matching the C11 atomic_*_explicit function signatures
+    * so test code that reads event_latch can use the same macro names as C code. */
+#  include <atomic>
+#  ifndef atomic_load_explicit
+#    define atomic_load_explicit(obj, order) ((obj)->load(order))
+#  endif
+#  ifndef atomic_fetch_or_explicit
+#    define atomic_fetch_or_explicit(obj, val, order) ((obj)->fetch_or((val), (order)))
+#  endif
+#  ifndef atomic_fetch_and_explicit
+#    define atomic_fetch_and_explicit(obj, val, order) ((obj)->fetch_and((val), (order)))
+#  endif
+#  ifndef memory_order_relaxed
+#    define memory_order_relaxed std::memory_order_relaxed
+#  endif
+#  ifndef memory_order_acquire
+#    define memory_order_acquire std::memory_order_acquire
+#  endif
+#  ifndef memory_order_acq_rel
+#    define memory_order_acq_rel std::memory_order_acq_rel
+#  endif
+#else
+#  include <stdatomic.h>
+#endif
+
 #include "fuse_types.h"
 #include "fuse.h"
 #include "wasm_export.h"
@@ -63,6 +94,15 @@ typedef struct {
     bool                  init_called;
     bool                  step_ever_run;   /* true after first successful step; avoids 0-sentinel collision */
     uint64_t              last_step_at_us; /* step_start_us recorded at last successful step */
+
+    /* Event latch: bits set by fuse_post_event() for events this module
+     * subscribes to.  Cleared atomically after the triggered step runs.
+     * ISR-safe via C11 _Atomic (C) / std::atomic<uint32_t> (C++). */
+#ifdef __cplusplus
+    std::atomic<uint32_t> event_latch;
+#else
+    _Atomic uint32_t      event_latch;
+#endif
 } fuse_module_desc_t;
 
 /* ---------------------------------------------------------------------------
@@ -87,6 +127,12 @@ extern fuse_context_t g_ctx;
  * Included here so fuse_core.c can call fuse_hal_log_register_natives().
  * --------------------------------------------------------------------------- */
 #include "log/fuse_hal_log.h"
+
+/* ---------------------------------------------------------------------------
+ * Event HAL group — always compiled.
+ * Included here so fuse_core.c can call fuse_hal_event_register_natives().
+ * --------------------------------------------------------------------------- */
+#include "event/fuse_hal_event.h"
 
 /* ---------------------------------------------------------------------------
  * Internal log helper (defined in fuse_log.c)

@@ -3,13 +3,15 @@
 policy_to_bin.py - Convert a FUSE policy JSON file to a binary file matching
 the fuse_policy_t C struct layout.
 
-fuse_policy_t layout (24 bytes, all little-endian uint32_t):
+fuse_policy_t layout (32 bytes, all little-endian uint32_t):
     uint32_t capabilities;      offset  0
     uint32_t memory_pages_max;  offset  4
     uint32_t stack_size;        offset  8
     uint32_t heap_size;         offset 12
     uint32_t cpu_quota_us;      offset 16
     uint32_t step_interval_us;  offset 20
+    uint32_t activation_mask;   offset 24  (optional, default 0)
+    uint32_t event_subscribe;   offset 28  (optional, default 0)
 
 Usage:
     python3 policy_to_bin.py --input <json_file> --output <bin_file>
@@ -28,10 +30,15 @@ POLICY_FIELDS = [
     "heap_size",
     "cpu_quota_us",
     "step_interval_us",
+    "activation_mask",   # optional; default 0 (INTERVAL compat)
+    "event_subscribe",   # optional; default 0
 ]
 
-PACK_FORMAT = "<6I"
-EXPECTED_SIZE = 24
+# Fields that are optional — absent from JSON means default value of 0.
+OPTIONAL_FIELDS = {"activation_mask", "event_subscribe"}
+
+PACK_FORMAT = "<8I"
+EXPECTED_SIZE = 32
 
 
 def parse_args():
@@ -68,10 +75,13 @@ def main():
 
     values = []
     for field in POLICY_FIELDS:
-        if field not in policy:
-            print(f"Error: missing required field '{field}' in {args.input}", file=sys.stderr)
-            sys.exit(1)
-        raw = policy[field]
+        if field in OPTIONAL_FIELDS:
+            raw = policy.get(field, 0)
+        else:
+            if field not in policy:
+                print(f"Error: missing required field '{field}' in {args.input}", file=sys.stderr)
+                sys.exit(1)
+            raw = policy[field]
         if not isinstance(raw, int):
             print(
                 f"Error: field '{field}' must be an integer, got {type(raw).__name__}",

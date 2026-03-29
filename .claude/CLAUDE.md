@@ -55,11 +55,12 @@ A WAMR(wasm-micro-runtime) based, highly secure and flexible edge runtime librar
   - `./core/timer/`: timer HAL group (`fuse_hal_timer.h`, `fuse_hal_timer.c`)
   - `./core/camera/`: camera HAL group (`fuse_hal_camera.h`, `fuse_hal_camera.c`)
   - `./core/log/`: log bridge — always compiled (`fuse_hal_log.h`, `fuse_hal_log.c`)
+  - `./core/event/`: event posting bridge — always compiled (`fuse_hal_event.h`, `fuse_hal_event.c`)
 - `./include`: contains .h header files & api definitions
 - `./tests`: contains all test cases
 - `./demos/`: contains demo applications; each demo has its own `app_config.json`
 - `./tools/`: contains scripts that @scripter may use and keep
-  - `./tools/policy_to_bin.py`: standalone policy JSON → 24-byte binary converter
+  - `./tools/policy_to_bin.py`: standalone policy JSON → 32-byte binary converter
   - `./tools/gen_app_config.py`: app_config.json → C header + CMake flags + policy binaries
 - `./wasm-micro-runtime/`: submodule that links to WAMR git repo, as project backbone
 - `./CMakeLists.txt`: main cmake build entry
@@ -141,6 +142,7 @@ FUSE hardware APIs are organized into compile-time-conditional groups under `cor
 | `timer` | `FUSE_HAL_ENABLE_TIMER` | `FUSE_CAP_TIMER=0x02` | `core/timer/` | also drives log timestamps |
 | `camera` | `FUSE_HAL_ENABLE_CAMERA` | `FUSE_CAP_CAMERA=0x04` | `core/camera/` | |
 | `log` | *(always on)* | `FUSE_CAP_LOG=0x08` | `core/log/` | writes to FUSE internal ring buffer, no host callback |
+| `event` | *(always on)* | `FUSE_CAP_EVENT_POST=0x10` | `core/event/` | module-side only; no host callback |
 
 **Key rules:**
 - `hal_groups` in `app_config.json` lists hardware present on the platform (never include `"log"` — it's always registered)
@@ -185,13 +187,16 @@ Each demo defines its complete deployment in one reviewable file:
 
 **`fuse_module_state_t`**: `LOADED=0` `RUNNING=1` `PAUSED=2` `TRAPPED=3` `QUOTA_EXCEEDED=4` `UNLOADED=5`
 
-**Capability bits**: `FUSE_CAP_TEMP_SENSOR=0x01` `FUSE_CAP_TIMER=0x02` `FUSE_CAP_CAMERA=0x04` `FUSE_CAP_LOG=0x08`
+**Capability bits**: `FUSE_CAP_TEMP_SENSOR=0x01` `FUSE_CAP_TIMER=0x02` `FUSE_CAP_CAMERA=0x04` `FUSE_CAP_LOG=0x08` `FUSE_CAP_EVENT_POST=0x10`
 
-**`fuse_policy_t`** — 6 × uint32_t (24 bytes, little-endian binary layout):
+**Activation mask bits**: `FUSE_ACTIVATION_INTERVAL=0x01` `FUSE_ACTIVATION_EVENT=0x02` `FUSE_ACTIVATION_MANUAL=0x04`
+
+**`fuse_policy_t`** — 8 × uint32_t (32 bytes, little-endian binary layout):
 ```c
 typedef struct { uint32_t capabilities; uint32_t memory_pages_max;
                  uint32_t stack_size; uint32_t heap_size; uint32_t cpu_quota_us;
-                 uint32_t step_interval_us; /* min µs between steps; 0=no constraint */ } fuse_policy_t;
+                 uint32_t step_interval_us; uint32_t activation_mask;
+                 uint32_t event_subscribe; } fuse_policy_t;
 ```
 **Constants**: `FUSE_INVALID_MODULE_ID=UINT32_MAX` `FUSE_MAX_MODULES=8` `FUSE_LOG_MSG_MAX=128`
 
@@ -221,7 +226,9 @@ fuse_stat_t fuse_module_unload(fuse_module_id_t id);
 fuse_stat_t fuse_module_run_step(fuse_module_id_t id);
 void        fuse_quota_expired(fuse_module_id_t id);  /* ISR-safe */
 uint32_t    fuse_tick(void);  /* run all due RUNNING modules; returns bitmask of IDs stepped */
-fuse_stat_t fuse_policy_from_bin(const uint8_t *buf, uint32_t len, fuse_policy_t *out_policy);  /* deserialise 24-byte policy binary */
+fuse_stat_t fuse_policy_from_bin(const uint8_t *buf, uint32_t len, fuse_policy_t *out_policy);  /* deserialise 32-byte policy binary */
+fuse_stat_t fuse_post_event(uint32_t event_id);   /* ISR-safe; posts event to all subscribed RUNNING modules */
+fuse_stat_t fuse_clear_event(uint32_t event_id);  /* clear all module latches for event_id */
 ```
 
 ## Key WAMR/AOT Constraints (Lessons Learned)

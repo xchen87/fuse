@@ -45,6 +45,7 @@ file(GLOB SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/core/timer/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/core/camera/*.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/core/log/*.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/event/*.c"
 )
 add_library(fuse SHARED ${SRCS})
 target_include_directories(fuse
