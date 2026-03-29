@@ -1,0 +1,44 @@
+{
+    "application": {
+        "name": "camera_filter_compress",
+        "description": "Event-chained pipeline: frame_filter characterises each camera frame and forwards it via DATA_CAPTURED only when its content passes a variance threshold; frame_compress wakes on DATA_CAPTURED and applies RLE compression.",
+        "max_modules": 2,
+        "wamr_pool_bytes": 16777216,
+        "log_pool_bytes": 65536,
+        "hal_groups": ["timer", "camera"],
+        "events": {
+            "CAMERA_FRAME_READY": 0,
+            "DATA_CAPTURED":      1
+        }
+    },
+    "modules": [
+        {
+            "name": "frame_filter",
+            "binary": "out/frame_filter.aot",
+            "policy": {
+                "capabilities": ["CAMERA", "LOG", "EVENT_POST"],
+                "memory_pages_max": 6,
+                "stack_size": 8192,
+                "heap_size": 8192,
+                "cpu_quota_us": 5000,
+                "step_interval_us": 0,
+                "activation": ["EVENT"],
+                "event_subscribe": ["CAMERA_FRAME_READY"]
+            }
+        },
+        {
+            "name": "frame_compress",
+            "binary": "out/frame_compress.aot",
+            "policy": {
+                "capabilities": ["CAMERA", "LOG"],
+                "memory_pages_max": 20,
+                "stack_size": 8192,
+                "heap_size": 8192,
+                "cpu_quota_us": 5000,
+                "step_interval_us": 0,
+                "activation": ["EVENT"],
+                "event_subscribe": ["DATA_CAPTURED"]
+            }
+        }
+    ]
+}

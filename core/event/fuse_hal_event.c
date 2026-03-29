@@ -34,6 +34,7 @@ static void fuse_native_event_post(wasm_exec_env_t exec_env,
     if (desc == NULL) {
         fuse_log_write(&g_ctx.log_ctx, FUSE_INVALID_MODULE_ID, 2u,
                        "event_post: unknown module instance");
+        wasm_runtime_set_exception(inst, "FUSE: rogue exec_env");
         return;
     }
 
