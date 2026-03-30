@@ -17,16 +17,12 @@ set(FUSE_PLATFORM "linux" CACHE STRING "Target platform: linux | freertos")
 set_property(CACHE FUSE_PLATFORM PROPERTY STRINGS linux freertos)
 message(STATUS "FUSE platform: ${FUSE_PLATFORM}")
 
-if(FUSE_PLATFORM STREQUAL "freertos")
-    # FreeRTOS POSIX simulator: WAMR still targets Linux/x86 for CI builds.
-    # For real Cortex-M4 hardware, override WAMR_BUILD_PLATFORM and
-    # WAMR_BUILD_TARGET in your BSP toolchain file.
-    set(WAMR_BUILD_PLATFORM "linux")
-    set(WAMR_BUILD_TARGET   "X86_64")
-else()
-    set(WAMR_BUILD_PLATFORM "linux")
-    set(WAMR_BUILD_TARGET   "X86_64")
-endif()
+# WAMR targets Linux/x86-64 for all CI builds.  The FreeRTOS POSIX simulator
+# also runs on x86 Linux, so the configuration is the same in both cases.
+# For real Cortex-M4 (or other embedded) hardware, override these variables
+# in your BSP toolchain file before including this CMakeLists.
+set(WAMR_BUILD_PLATFORM "linux")
+set(WAMR_BUILD_TARGET   "X86_64")
 
 set(WAMR_BUILD_INTERP 0)
 set(WAMR_BUILD_FAST_INTERP 0)
