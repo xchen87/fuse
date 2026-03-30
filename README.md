@@ -4,7 +4,8 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-FUSE is a deterministic edge FaaS runtime built for constrained and safety-critical systems, with space and satellite applications as a primary target. Built on [WAMR](https://github.com/bytecodealliance/wasm-micro-runtime), it provides isolated, policy-bounded sandboxes with predictable scheduling and resource consumption — suitable for RTOS environments, bare-metal systems, and on-board computers.
+FUSE is a deterministic edge FaaS runtime built for resource-constrained and safety-critical systems, with space and satellite applications as a primary target.
+Built on [WAMR](https://github.com/bytecodealliance/wasm-micro-runtime), it provides isolated, policy-bounded sandboxes with predictable scheduling and resource consumption — suitable for RTOS environments, bare-metal systems, and on-board computers.
 
 > **Early-stage Project** — APIs and interfaces are evolving rapidly. Frequent breaking changes should be expected. Feedback and contributions of any kind are very welcome.
 >
@@ -13,7 +14,7 @@ FUSE is a deterministic edge FaaS runtime built for constrained and safety-criti
 ## Key Properties
 
 - **Review-friendly policy** — every deployment is described by a single `app_config.json` that captures hardware capabilities, memory budgets, CPU quotas, and scheduling parameters in human-readable form
-- **Hardware portability** — the FUSE core is easily portable across different host (RTOS, bare-metal, Linux); only a thin HAL callback layer needs porting to new hardware
+- **Hardware portability** — FUSE is easily portable across different host (RTOS, bare-metal, Linux); only a thin HAL callback layer needs porting to new hardware
 - **Language portability** — modules can be written in any language that compiles to WASM (C, C++, Rust, Zig, and others); the FUSE runtime itself is pure C
 - **Strict isolation** — each module runs in its own WASM linear memory; cross-module and host memory access is impossible by construction
 - **Fail-safe** — module failures are guaranteed to be trapped within the sandbox and do not affect the host
